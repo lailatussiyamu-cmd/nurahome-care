@@ -1,0 +1,34 @@
+# Penjadwal cadangan lewat GitHub Actions, untuk hosting yang tidak punya
+# cron sendiri. Simpan BASIS dan CRON_SECRET sebagai repository secrets.
+#
+# Catatan jujur: penjadwal GitHub Actions TIDAK tepat waktu — antreannya
+# sering membuat pekerjaan mundur beberapa menit sampai belasan menit.
+# Untuk tugas di sini itu tidak masalah, tapi jangan dipakai untuk hal
+# yang harus tepat pada menitnya.
+name: Tugas terjadwal NuraHome
+
+on:
+  schedule:
+    - cron: "5 * * * *"    # penawaran hangus & permintaan menggantung
+    - cron: "10 20 * * *"  # 03:10 WIB — hapus foto kedaluwarsa
+    - cron: "0 0 * * *"    # 07:00 WIB — pengingat kunjungan
+  workflow_dispatch:
+    inputs:
+      kering:
+        description: "Uji kering (tidak mengubah data)"
+        type: boolean
+        default: true
+
+jobs:
+  jalankan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Panggil endpoint tugas
+        run: |
+          KERING=""
+          if [ "${{ github.event.inputs.kering }}" = "true" ]; then KERING="&kering=1"; fi
+          curl -fsS --retry 3 --retry-delay 10 \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            "${{ secrets.BASIS }}/api/cron?${KERING#&}" | tee hasil.json
+      - name: Tampilkan ringkasan
+        run: python3 -c "import json;d=json.load(open('hasil.json'));[print(h['nama'],h['dikenai'],'/',h['diperiksa']) for h in d['hasil']]"

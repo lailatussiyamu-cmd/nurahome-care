@@ -1,0 +1,1 @@
+ALTER TABLE "consents" ADD COLUMN "photo_consent_text" text;

@@ -1,0 +1,33 @@
+# NuraHome Care — tugas terjadwal untuk server sendiri (VPS / cPanel).
+#
+# PENTING: crontab berjalan di waktu SERVER. Kalau server memakai UTC —
+# dan sebagian besar VPS memang begitu — jam di sini harus dikurangi 7 dari
+# jam WIB yang Anda inginkan. Nilai di bawah sudah dihitung untuk server
+# UTC. Periksa dengan `date` di server; kalau servernya sudah WIB, ubah
+# 20:10 jadi 03:10 dan 00:00 jadi 07:00.
+#
+# Pasang dengan:  crontab -e   lalu tempel isi berkas ini.
+# Ganti dua baris berikut sesuai server Anda:
+
+BASIS=https://nurahome.example.id
+CRON_SECRET=ganti-dengan-rahasia-panjang-anda
+
+# --- setiap jam ---
+# Penawaran yang tidak dijawab pasien dalam 48 jam
+5  *   * * *  curl -fsS -H "Authorization: Bearer $CRON_SECRET" "$BASIS/api/cron?tugas=penawaran-hangus" >> /var/log/nurahome-cron.log 2>&1
+# Permintaan yang belum diambil perawat mana pun
+15 *   * * *  curl -fsS -H "Authorization: Bearer $CRON_SECRET" "$BASIS/api/cron?tugas=permintaan-menggantung" >> /var/log/nurahome-cron.log 2>&1
+# Sudah disetujui tapi tidak dibayar dalam 24 jam
+25 *   * * *  curl -fsS -H "Authorization: Bearer $CRON_SECRET" "$BASIS/api/cron?tugas=belum-dibayar" >> /var/log/nurahome-cron.log 2>&1
+
+# --- setiap 3 jam ---
+# Kunjungan yang laporannya belum ditandatangani perawat
+35 */3 * * *  curl -fsS -H "Authorization: Bearer $CRON_SECRET" "$BASIS/api/cron?tugas=kunjungan-belum-ditutup" >> /var/log/nurahome-cron.log 2>&1
+
+# --- harian ---
+# 03:10 WIB — menghapus foto luka yang lewat masa simpan 5 tahun
+10 20 * * *  curl -fsS -H "Authorization: Bearer $CRON_SECRET" "$BASIS/api/cron?tugas=hapus-foto-kedaluwarsa" >> /var/log/nurahome-cron.log 2>&1
+# 07:00 WIB — pengingat kunjungan besok
+0  0  * * *  curl -fsS -H "Authorization: Bearer $CRON_SECRET" "$BASIS/api/cron?tugas=pengingat-kunjungan" >> /var/log/nurahome-cron.log 2>&1
+# 08:00 WIB — ingatkan admin soal masukan pasien yang belum disortir
+0  1  * * *  curl -fsS -H "Authorization: Bearer $CRON_SECRET" "$BASIS/api/cron?tugas=testimoni-belum-disortir" >> /var/log/nurahome-cron.log 2>&1

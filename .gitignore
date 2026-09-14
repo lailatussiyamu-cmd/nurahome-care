@@ -1,0 +1,40 @@
+# Hasil pemasangan dan hasil bangun — dibuat ulang dengan `npm install`
+node_modules/
+.next/
+out/
+build/
+tsconfig.tsbuildinfo
+*.tsbuildinfo
+
+# ┌──────────────────────────────────────────────────────────────────┐
+# │  RAHASIA — TIDAK BOLEH IKUT KE GITHUB, SEKALI PUN                 │
+# │                                                                   │
+# │  .env memuat kunci server Midtrans, kunci API model, dan alamat   │
+# │  basis data berikut kata sandinya. Rahasia yang pernah terdorong  │
+# │  ke GitHub harus dianggap bocor SELAMANYA — menghapusnya di       │
+# │  komit berikutnya tidak menghapusnya dari riwayat, dan repo       │
+# │  privat pun bisa berubah publik karena satu kali salah klik.      │
+# │                                                                   │
+# │  Yang ikut hanya .env.example: namanya saja, tanpa isinya.        │
+# └──────────────────────────────────────────────────────────────────┘
+.env
+.env.*
+!.env.example
+
+# Cadangan basis data — memuat rekam medis pasien.
+# Tempatnya di penyimpanan cadangan, bukan di repositori kode.
+cadangan/
+*.dump
+*.sql.gz
+*.backup
+
+# Foto dan berkas unggahan
+unggahan/
+uploads/
+
+# Catatan sementara
+*.log
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

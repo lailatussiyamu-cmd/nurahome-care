@@ -1,0 +1,196 @@
+@import "tailwindcss";
+
+/* ============================================================
+   NuraHome Care — sistem visual
+   ------------------------------------------------------------
+   Gambarannya satu: ruang gelap dengan satu kolam cahaya.
+   Perawat datang ke rumah, sering setelah magrib, dan bekerja di
+   bawah satu lampu di samping tempat tidur. Latar ungu kehitaman
+   mengikuti keadaan itu, dan SATU aksen hangat (--color-nh-lampu)
+   hanya dipakai untuk hal yang sedang bergerak menuju pasien —
+   perawat berangkat, perawat tiba. Kalau dipakai untuk hal lain,
+   ia berhenti berarti.
+
+   Warna semantik (sembuh / waspada / bahaya) TERPISAH dari warna
+   aksen. Ungu berarti "ini bisa ditekan", bukan "ini bagus".
+   ============================================================ */
+
+@theme {
+  /* --- permukaan --- */
+  --color-nh-malam: #0C0713;
+  --color-nh-panel: #17102A;
+  --color-nh-panel-2: #211736;
+  --color-nh-garis: #2E2148;
+  --color-nh-garis-2: #3B2C5C;
+
+  /* --- aksen --- */
+  --color-nh-ungu: #A855F7;
+  --color-nh-ungu-muda: #D8B4FE;
+  --color-nh-ungu-tua: #7C3AED;
+  /**
+   * Ungu untuk LATAR TOMBOL berisi teks putih.
+   *
+   * --color-nh-ungu (#A855F7) terlalu terang untuk itu: teks putih di
+   * atasnya hanya 3,59:1. Warnanya tetap dipakai sebagai aksen — ikon,
+   * garis, cahaya — di mana tidak ada teks yang harus terbaca di atasnya.
+   */
+  --color-nh-ungu-tekan: #8B34E0;
+  --color-nh-lampu: #FFB86B;
+
+  /* --- teks --- */
+  --color-nh-putih: #F6F2FF;
+  --color-nh-kabut: #A498C4;
+  /**
+   * Dinaikkan dari #7C6E9B setelah mengukur halaman yang sudah jalan:
+   * warna lama hanya 3,68:1 di atas panel — di bawah 4,5:1 yang diperlukan
+   * teks kecil. Warna ini dipakai untuk keterangan berukuran 10–11px, yang
+   * justru paling sering dibaca sambil menahan ponsel dengan satu tangan.
+   */
+  --color-nh-kabut-2: #9488B8;
+
+  /* --- semantik, bukan aksen --- */
+  --color-nh-sembuh: #4ADE80;
+  --color-nh-waspada: #FBBF24;
+  --color-nh-bahaya: #FB7185;
+
+  --radius-nh: 18px;
+  --radius-nh-kecil: 12px;
+}
+
+@layer base {
+  body {
+    font-family: var(--font-body), "Plus Jakarta Sans", system-ui, sans-serif;
+    background-color: #0C0713;
+    color: #F6F2FF;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Sora untuk judul, Plus Jakarta Sans untuk isi.
+     Catatan jujur: awalnya Plus Jakarta Sans dipilih karena layanan ini
+     berbasis di Jakarta. Layanannya sekarang khusus Malang, jadi alasan
+     itu gugur. Wajahnya tetap dipakai atas dasar yang berdiri sendiri —
+     bentuknya bersih, angkanya jelas, dan enak dibaca di layar kecil. */
+  h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-heading), "Sora", system-ui, sans-serif;
+    letter-spacing: -0.02em;
+    text-wrap: balance;
+  }
+
+  /* Rupiah, sentimeter, skor nyeri, dan kode pemesanan memakai huruf
+     mono supaya angkanya sejajar dan tidak salah baca. */
+  code, pre, .font-mono, .nh-angka {
+    font-family: var(--font-mono), "JetBrains Mono", ui-monospace, monospace;
+    font-variant-numeric: tabular-nums;
+  }
+
+  ::selection { background: rgba(168, 85, 247, 0.35); color: #F6F2FF; }
+}
+
+@layer components {
+  /* Kolam cahaya. Dipasang sekali di layout, bukan per halaman. */
+  .nh-aura { position: fixed; inset: 0; pointer-events: none; z-index: 0; }
+  .nh-aura::before,
+  .nh-aura::after { content: ""; position: absolute; border-radius: 9999px; filter: blur(90px); }
+  .nh-aura::before {
+    width: min(64vw, 720px); height: min(64vw, 720px);
+    top: -22%; left: 50%; transform: translateX(-50%);
+    background: radial-gradient(circle, rgba(124, 58, 237, 0.24), rgba(124, 58, 237, 0) 70%);
+  }
+  .nh-aura::after {
+    width: min(42vw, 480px); height: min(42vw, 480px); bottom: -16%; right: -10%;
+    background: radial-gradient(circle, rgba(255, 184, 107, 0.11), rgba(255, 184, 107, 0) 72%);
+  }
+
+  /* Panel berbingkai dipakai HEMAT. Ketika setiap blok punya bingkai,
+     bingkai berhenti berarti "ini benda tersendiri" — dan hierarkinya
+     jadi rata. Untuk daftar (layanan, kunjungan, riwayat), pakai
+     .nh-baris: pemisahnya garis rambut, hurufnya yang bekerja. */
+  .nh-panel {
+    background: #17102A;
+    border: 1px solid #2E2148;
+    border-radius: var(--radius-nh);
+  }
+
+  /* Baris daftar tanpa bingkai — hanya garis pemisah di atasnya.
+     Bingkai dan pendar disimpan untuk baris yang sedang dipilih. */
+  .nh-baris {
+    background: transparent;
+    border: 0;
+    border-top: 1px solid #2E2148;
+    border-radius: 0;
+    transition: background 0.2s ease, padding 0.2s ease;
+  }
+  .nh-baris:first-child { border-top: 0; }
+  .nh-baris:hover { background: rgba(168, 85, 247, 0.05); }
+  .nh-baris[data-terpilih="true"] {
+    background: linear-gradient(180deg, rgba(168, 85, 247, 0.12), rgba(168, 85, 247, 0.02));
+    border-top-color: transparent;
+    border-radius: var(--radius-nh);
+    box-shadow: 0 0 0 1px rgba(168, 85, 247, 0.28), 0 8px 32px -8px rgba(168, 85, 247, 0.45);
+  }
+
+  /* Cahaya dipakai untuk MENUNJUKKAN, bukan menghias: kartu yang
+     bisa ditekan, kolom yang sedang difokus, tombol utama. Kalau
+     semua bersinar, tidak ada yang menonjol. */
+  .nh-sinar { box-shadow: 0 0 0 1px rgba(168, 85, 247, 0.28), 0 8px 32px -8px rgba(168, 85, 247, 0.45); }
+  .nh-sinar-lampu { box-shadow: 0 0 0 1px rgba(255, 184, 107, 0.30), 0 8px 30px -10px rgba(255, 184, 107, 0.50); }
+
+  .nh-tombol {
+    /**
+     * Gradasi digelapkan dari (#A855F7 → #7C3AED).
+     *
+     * Ujung terangnya membuat teks putih hanya 3,59:1 — di bawah 4,5:1 —
+     * dan yang paling menderita justru tombol paling penting di aplikasi
+     * ini: "Bayar", "Kirim penawaran", "Setuju". Sekarang 5,2:1 di ujung
+     * paling terang, dan gradasinya masih terasa.
+     */
+    background: linear-gradient(140deg, #8B34E0, #6D28D9);
+    color: #fff;
+    border-radius: 14px;
+    font-family: var(--font-heading), "Sora", sans-serif;
+    font-weight: 600;
+    box-shadow: 0 8px 26px -10px rgba(168, 85, 247, 0.95);
+    transition: transform 0.16s ease, box-shadow 0.16s ease;
+  }
+  .nh-tombol:hover { transform: translateY(-1px); box-shadow: 0 12px 32px -10px rgba(168, 85, 247, 1); }
+  .nh-tombol:disabled { opacity: 0.4; transform: none; box-shadow: none; cursor: not-allowed; }
+
+  .nh-isian {
+    background: #211736;
+    border: 1px solid #2E2148;
+    border-radius: var(--radius-nh-kecil);
+    color: #F6F2FF;
+  }
+  .nh-isian:focus {
+    outline: none;
+    border-color: #A855F7;
+    box-shadow: 0 0 0 3px rgba(168, 85, 247, 0.18);
+  }
+
+  /* Judul yang memakai gradasi. Sekali per layar, tidak lebih. */
+  .nh-gradasi {
+    background: linear-gradient(100deg, #D8B4FE, #FFB86B);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+}
+
+/* Fokus keyboard harus selalu terlihat. Perawat mengisi pengkajian
+   sambil memegang alat; papan ketik sering lebih cepat daripada
+   layar sentuh. */
+:where(a, button, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid #D8B4FE;
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+/* Garis gulir untuk garis waktu klinis dan panel percakapan */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: #17102A; }
+::-webkit-scrollbar-thumb { background: #3B2C5C; border-radius: 9999px; }
+::-webkit-scrollbar-thumb:hover { background: #4A3970; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}
