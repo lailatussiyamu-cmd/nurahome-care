@@ -1,0 +1,496 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Woundex: early warning for diabetic foot ulcers cared for at home. Live prototype with simulated patients.">
+<title>Woundex</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@600;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@500;700&display=swap">
+<style>
+/* Layout: caseload rail (who to see first) | patient workspace: signals in, explainable prediction out. */
+:root{
+  --bg:#F3F6F6; --surface:#FFFFFF; --sunken:#E9EFEF; --line:#D3DDDD; --line-2:#BCCACA;
+  --ink:#10292B; --ink-2:#44605F; --ink-3:#6E8786;
+  --accent:#0B6E6A; --accent-soft:#D6ECEA;
+  --green:#1E7F4E; --green-bg:#DDF1E5;
+  --amber:#9A5B00; --amber-bg:#FCEFD3;
+  --red:#B4232C; --red-bg:#FBE0E0;
+  --display:"Manrope",system-ui,sans-serif;
+  --body:"Inter",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,Consolas,monospace;
+  --r:12px;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#0C1717; --surface:#122121; --sunken:#182B2B; --line:#25403F; --line-2:#335553;
+  --ink:#E4F0EF; --ink-2:#A6C0BE; --ink-3:#7C9896;
+  --accent:#4FC2BB; --accent-soft:#163A38;
+  --green:#5FD08F; --green-bg:#143325; --amber:#F2B455; --amber-bg:#3A2A0F; --red:#FF7A80; --red-bg:#3D1719;
+  color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0C1717; --surface:#122121; --sunken:#182B2B; --line:#25403F; --line-2:#335553;
+  --ink:#E4F0EF; --ink-2:#A6C0BE; --ink-3:#7C9896;
+  --accent:#4FC2BB; --accent-soft:#163A38;
+  --green:#5FD08F; --green-bg:#143325; --amber:#F2B455; --amber-bg:#3A2A0F; --red:#FF7A80; --red-bg:#3D1719;
+  color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--body);font-size:14.5px;line-height:1.5;
+  padding-block:0 48px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+h1,h2,h3{font-family:var(--display);letter-spacing:-.02em;text-wrap:balance;margin:0}
+input,select,textarea,button{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.num{font-family:var(--mono);font-variant-numeric:tabular-nums}
+
+.top{max-width:1240px;margin:0 auto;padding:22px 0 16px;display:flex;flex-wrap:wrap;gap:10px 20px;align-items:flex-end;justify-content:space-between;border-bottom:1px solid var(--line)}
+.brand{display:flex;gap:12px;align-items:center}
+.mark{width:38px;height:38px;border-radius:10px;background:var(--accent);display:grid;place-items:center;flex:none}
+.mark svg{width:22px;height:22px}
+.brand h1{font-size:22px;font-weight:800}
+.brand p{margin:2px 0 0;color:var(--ink-2);font-size:13px}
+.flag{font-size:12px;color:var(--ink-2);border:1px solid var(--line-2);border-radius:999px;padding:5px 12px;background:var(--surface)}
+.flag b{color:var(--ink)}
+
+.app{max-width:1240px;margin:20px auto 0;display:grid;grid-template-columns:290px minmax(0,1fr);gap:22px;align-items:start}
+@media (max-width:900px){.app{grid-template-columns:1fr}}
+
+.label{font-size:11px;font-weight:600;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-3)}
+
+/* caseload */
+.rail{display:flex;flex-direction:column;gap:10px}
+.rail-head{display:flex;justify-content:space-between;align-items:baseline}
+.counts{display:flex;gap:6px}
+.cnt{font-family:var(--mono);font-size:12px;padding:1px 8px;border-radius:999px}
+.cnt.red{background:var(--red-bg);color:var(--red)}.cnt.amber{background:var(--amber-bg);color:var(--amber)}.cnt.green{background:var(--green-bg);color:var(--green)}
+.case{display:grid;grid-template-columns:6px minmax(0,1fr) auto;gap:0 12px;align-items:center;text-align:left;width:100%;
+  background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:12px 12px 12px 0;cursor:pointer;overflow:hidden}
+.case:hover{border-color:var(--line-2)}
+.case[aria-current="true"]{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+.case .stripe{align-self:stretch;margin:-12px 0}
+.case .nm{font-weight:600;font-size:14px}
+.case .sub{font-size:12px;color:var(--ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pill{font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;padding:3px 9px;border-radius:999px;white-space:nowrap}
+.t-red{background:var(--red-bg);color:var(--red)}.t-amber{background:var(--amber-bg);color:var(--amber)}.t-green{background:var(--green-bg);color:var(--green)}
+.s-red{background:var(--red)}.s-amber{background:var(--amber)}.s-green{background:var(--green)}
+.rail-note{font-size:12px;color:var(--ink-3);margin:4px 2px 0}
+
+/* workspace */
+.ws{display:flex;flex-direction:column;gap:18px;min-width:0}
+.phead{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:baseline;justify-content:space-between}
+.phead h2{font-size:24px;font-weight:800}
+.phead .meta{color:var(--ink-2);font-size:13px}
+.cols{display:grid;grid-template-columns:minmax(0,0.92fr) minmax(0,1.08fr);gap:18px;align-items:start}
+@media (max-width:1100px){.cols{grid-template-columns:1fr}}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:18px;min-width:0}
+.panel h3{font-size:15px;font-weight:700;margin-bottom:12px;display:flex;justify-content:space-between;gap:10px;align-items:baseline}
+.panel h3 small{font-family:var(--body);font-weight:500;font-size:12px;color:var(--ink-3);letter-spacing:0}
+
+.grp{border-top:1px solid var(--line);padding-top:12px;margin-top:12px}
+.grp:first-of-type{border-top:0;padding-top:0;margin-top:0}
+.grp > .label{display:block;margin-bottom:8px}
+.fields{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.fields.two{grid-template-columns:repeat(2,minmax(0,1fr))}
+@media (max-width:480px){.fields{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.f{display:flex;flex-direction:column;gap:4px;min-width:0}
+.f span{font-size:12px;color:var(--ink-2)}
+.f input,.f select,textarea{background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px 10px;width:100%;min-width:0}
+.f input{font-family:var(--mono);font-variant-numeric:tabular-nums}
+textarea{resize:vertical;min-height:58px;font-size:13.5px}
+.checks{display:flex;flex-wrap:wrap;gap:6px}
+.chk{display:flex;align-items:center;gap:7px;border:1px solid var(--line);border-radius:999px;padding:6px 12px;cursor:pointer;font-size:13px;background:var(--bg);user-select:none}
+.chk input{accent-color:var(--accent);margin:0;width:15px;height:15px}
+.chk:has(input:checked){border-color:var(--accent);background:var(--accent-soft)}
+.hint{font-size:12px;color:var(--ink-3);margin-top:6px}
+
+/* result */
+.verdict{border-radius:var(--r);padding:16px 18px;display:flex;flex-direction:column;gap:6px}
+.verdict.red{background:var(--red-bg)}.verdict.amber{background:var(--amber-bg)}.verdict.green{background:var(--green-bg)}
+.verdict .lvl{font-family:var(--display);font-weight:800;font-size:20px;letter-spacing:-.02em}
+.verdict.red .lvl{color:var(--red)}.verdict.amber .lvl{color:var(--amber)}.verdict.green .lvl{color:var(--green)}
+.verdict .act{font-size:14.5px;color:var(--ink);font-weight:500}
+.scores{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:14px}
+@media (max-width:480px){.scores{grid-template-columns:1fr}}
+.score{border:1px solid var(--line);border-radius:10px;padding:10px 12px;min-width:0}
+.score .v{font-family:var(--mono);font-weight:700;font-size:20px;margin-top:2px}
+.score .d{font-size:12px;color:var(--ink-2);line-height:1.35;margin-top:2px}
+.why{list-style:none;margin:14px 0 0;padding:0;display:flex;flex-direction:column}
+.why li{display:grid;grid-template-columns:10px minmax(0,1fr);gap:10px;padding:8px 0;border-top:1px solid var(--line);font-size:13.5px}
+.why li:first-child{border-top:0}
+.dot{width:10px;height:10px;border-radius:50%;margin-top:5px}
+.d-red{background:var(--red)}.d-amber{background:var(--amber)}.d-green{background:var(--green)}.d-info{background:var(--line-2)}
+.todo{margin:8px 0 0;padding-left:20px;font-size:13.5px}
+.todo li{margin:3px 0}
+
+.chartbox{overflow-x:auto}
+.chartbox svg{display:block;width:100%;min-width:420px;height:auto}
+.legend{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:12px;color:var(--ink-2);margin-top:6px}
+.legend i{display:inline-block;width:18px;height:0;border-top:2px solid var(--accent);vertical-align:middle;margin-right:6px}
+.legend i.dash{border-top-style:dashed}
+.legend i.tgt{border-top-color:var(--ink-3);border-top-style:dotted}
+.traj{margin-top:10px;font-size:13.5px}
+.traj b{font-family:var(--mono)}
+
+.soap{font-family:var(--mono);font-size:12.5px;line-height:1.6;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:12px 14px;white-space:pre-wrap;margin:0;overflow-x:auto}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;justify-content:space-between}
+.btn{border:1px solid var(--line-2);background:var(--surface);border-radius:8px;padding:7px 14px;cursor:pointer;font-weight:600;font-size:13px}
+.btn:hover{border-color:var(--accent);color:var(--accent)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--surface)}
+.btn.primary:hover{opacity:.9;color:var(--surface)}
+.tiny{font-size:12px;color:var(--ink-3)}
+
+.foot{max-width:1240px;margin:28px auto 0;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px;font-size:13px;color:var(--ink-2)}
+@media (max-width:900px){.foot{grid-template-columns:1fr}}
+.foot h3{font-size:13px;color:var(--ink);margin-bottom:6px}
+.foot p,.foot ul{margin:0}
+.foot ul{padding-left:18px}
+.foot a{color:var(--accent)}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+
+<header class="top">
+  <div class="brand">
+    <div class="mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M9.2 7.5c-2.2.6-3.4 3-3.1 6.2.3 3.4 1.6 6.6 4.3 6.8 2.4.2 3.2-2.3 2.8-4.6-.3-1.7.4-3.1 1.1-4.6.9-2-.6-4.7-5.1-3.8z"/><path d="M6.6 14h2.2l1.1-2.2 1.5 4 1.1-1.8h2.2"/><circle cx="12.6" cy="4.4" r="1"/><circle cx="15" cy="5.1" r=".85"/><circle cx="16.9" cy="6.4" r=".75"/><circle cx="18.2" cy="8.2" r=".65"/></svg></div>
+    <div><h1>Woundex</h1><p>Smart Wound Care Ecosystem · home care, wound early warning, healing tracking</p></div>
+  </div>
+  <span class="flag"><b>Prototype</b> · simulated patients · decision support for licensed nurses</span>
+</header>
+
+<main class="app">
+  <aside class="rail" aria-label="Caseload">
+    <div class="rail-head"><span class="label">Today's caseload</span><span class="counts" id="counts"></span></div>
+    <div id="cases" class="rail"></div>
+    <p class="rail-note">Sorted by risk, so the coordinator sends the next nurse to the patient who needs it most.</p>
+  </aside>
+
+  <section class="ws">
+    <div class="phead"><h2 id="pname"></h2><span class="meta" id="pmeta"></span></div>
+    <div class="cols">
+      <!-- signals in -->
+      <form class="panel" id="form" autocomplete="off">
+        <h3>Today's home visit <small id="vday"></small></h3>
+
+        <div class="grp"><span class="label">Wound size</span>
+          <div class="fields">
+            <label class="f"><span>Length (cm)</span><input id="len" inputmode="decimal"></label>
+            <label class="f"><span>Width (cm)</span><input id="wid" inputmode="decimal"></label>
+            <label class="f"><span>Deepest tissue</span><select id="depth"><option value="sup">Skin / subcutis</option><option value="ten">Tendon / capsule</option><option value="bone">Probes to bone</option></select></label>
+          </div>
+        </div>
+
+        <div class="grp"><span class="label">Local signs of infection</span>
+          <div class="fields two" style="margin-bottom:10px">
+            <label class="f"><span>Erythema beyond wound edge (cm)</span><input id="ery" inputmode="decimal"></label>
+            <label class="f"><span>Exudate</span><select id="exu"><option>None</option><option>Light</option><option>Moderate</option><option>Heavy</option></select></label>
+          </div>
+          <div class="checks">
+            <label class="chk"><input type="checkbox" id="swell">Swelling / induration</label>
+            <label class="chk"><input type="checkbox" id="warm">Local warmth</label>
+            <label class="chk"><input type="checkbox" id="tender">Tenderness / pain</label>
+            <label class="chk"><input type="checkbox" id="pus">Purulent discharge</label>
+            <label class="chk"><input type="checkbox" id="necro">New necrosis / black tissue</label>
+          </div>
+        </div>
+
+        <div class="grp"><span class="label">Vital signs &amp; glucose</span>
+          <div class="fields">
+            <label class="f"><span>Temp (°C)</span><input id="temp" inputmode="decimal"></label>
+            <label class="f"><span>Heart rate (/min)</span><input id="hr" inputmode="numeric"></label>
+            <label class="f"><span>Resp. rate (/min)</span><input id="rr" inputmode="numeric"></label>
+            <label class="f"><span>Glucose (mg/dL)</span><input id="glu" inputmode="numeric"></label>
+          </div>
+        </div>
+
+        <div class="grp"><span class="label">Foot status</span>
+          <div class="checks">
+            <label class="chk"><input type="checkbox" id="nopulse">Foot pulses not palpable</label>
+            <label class="chk"><input type="checkbox" id="lops">Loss of protective sensation</label>
+          </div>
+          <div class="fields two" style="margin-top:10px">
+            <label class="f"><span>Ulcer site</span><select id="site"><option value="fore">Forefoot</option><option value="mid">Midfoot</option><option value="hind">Hindfoot / heel</option></select></label>
+          </div>
+        </div>
+
+        <div class="grp"><span class="label">Patient / family report</span>
+          <textarea id="subj"></textarea>
+        </div>
+        <div class="row" style="margin-top:12px">
+          <span class="tiny">Every change re-scores instantly. Nothing leaves this page.</span>
+          <button type="button" class="btn" id="reset">Restore case</button>
+        </div>
+      </form>
+
+      <!-- prediction out -->
+      <div class="ws" style="gap:18px">
+        <section class="panel" aria-live="polite">
+          <div class="verdict" id="verdict"><span class="label">Woundex decision</span><span class="lvl" id="lvl"></span><span class="act" id="act"></span></div>
+          <div class="scores">
+            <div class="score"><span class="label">IWGDF/IDSA</span><div class="v" id="iw"></div><div class="d" id="iwd"></div></div>
+            <div class="score"><span class="label">SINBAD</span><div class="v" id="sb"></div><div class="d" id="sbd"></div></div>
+            <div class="score"><span class="label">Week-4 area</span><div class="v" id="pr"></div><div class="d" id="prd"></div></div>
+          </div>
+          <ul class="why" id="why"></ul>
+          <div id="todoWrap"><span class="label" style="display:block;margin-top:12px">Next steps</span><ol class="todo" id="todo"></ol></div>
+        </section>
+
+        <section class="panel">
+          <h3>Healing trajectory <small>area = length × width</small></h3>
+          <div class="chartbox" id="chart"></div>
+          <div class="legend"><span><i></i>Measured</span><span><i class="dash"></i>Projected trend</span><span><i class="tgt"></i>50% reduction target at week 4</span></div>
+          <p class="traj" id="traj"></p>
+        </section>
+
+        <section class="panel">
+          <h3>Visit note draft <small>SOAP · nurse must review and sign</small></h3>
+          <pre class="soap" id="soap"></pre>
+          <div class="row" style="margin-top:10px"><span class="tiny" id="copied">Draft only. Not valid until reviewed by the licensed nurse.</span><button type="button" class="btn primary" id="copy">Copy note</button></div>
+        </section>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer class="foot">
+  <div><h3>How the prediction works</h3>
+    <p>Woundex uses transparent clinical rules, not a black box. It grades infection with the IWGDF/IDSA classification, scores ulcer severity with SINBAD, and extends the line from the first to the latest wound area to project the reduction at week 4. Less than about 50% reduction at 4 weeks predicts that an ulcer will not heal by week 12.</p></div>
+  <div><h3>Safety &amp; data</h3>
+    <ul><li>Every alert shows the signals that triggered it.</li><li>Decisions stay with the nurse and doctor; Woundex only prioritises and drafts.</li><li>All patients here are simulated. The page stores nothing and sends nothing.</li></ul></div>
+  <div><h3>Clinical references</h3>
+    <ul>
+      <li>Senneville É et al. IWGDF/IDSA guidelines on the diagnosis and treatment of diabetes-related foot infections, 2023.</li>
+      <li>Ince P et al. Use of the SINBAD classification system and score in comparing outcome of foot ulcer management. Diabetes Care, 2008.</li>
+      <li>Sheehan P et al. Percent change in wound area of diabetic foot ulcers over a 4-week period is a robust predictor of complete healing in a 12-week prospective trial. Diabetes Care, 2003.</li>
+    </ul></div>
+</footer>
+
+<script>
+/* ---------- simulated caseload ---------- */
+const CASES = [
+  { id:"siti", name:"Siti Aminah", age:63, sex:"F", dx:"Type 2 diabetes, 12 yrs", loc:"Sawojajar",
+    history:[{d:0,l:4.2,w:2.8},{d:7,l:3.6,w:2.4},{d:14,l:3.0,w:2.0}],
+    today:{d:24,len:2.6,wid:1.7,depth:"sup",ery:0,exu:"Light",swell:false,warm:false,tender:false,pus:false,necro:false,
+      temp:36.8,hr:82,rr:18,glu:168,nopulse:false,lops:true,site:"fore",subj:"Less pain than last week. Wearing the offloading sandal most of the day."}},
+  { id:"hadi", name:"Hadi Pranoto", age:58, sex:"M", dx:"Type 2 diabetes, 9 yrs", loc:"Lowokwaru",
+    history:[{d:0,l:3.0,w:2.5},{d:7,l:2.9,w:2.5},{d:14,l:3.0,w:2.4}],
+    today:{d:26,len:3.1,wid:2.5,depth:"sup",ery:1.5,exu:"Moderate",swell:true,warm:true,tender:false,pus:false,necro:false,
+      temp:37.4,hr:88,rr:18,glu:286,nopulse:false,lops:true,site:"fore",subj:"Still walking to the market without the offloading shoe. Dressing wetter than usual."}},
+  { id:"rina", name:"Rina Wulandari", age:71, sex:"F", dx:"Type 2 diabetes, 20 yrs; hypertension", loc:"Blimbing",
+    history:[{d:0,l:2.0,w:1.8},{d:7,l:2.2,w:2.0}],
+    today:{d:12,len:2.8,wid:2.4,depth:"ten",ery:3.5,exu:"Heavy",swell:true,warm:true,tender:true,pus:true,necro:false,
+      temp:38.6,hr:104,rr:22,glu:342,nopulse:true,lops:true,site:"hind",subj:"Shivering since last night, not eating. Daughter noticed a bad smell from the heel."}},
+  { id:"dewi", name:"Dewi Lestari", age:55, sex:"F", dx:"Type 2 diabetes, 6 yrs", loc:"Klojen",
+    history:[{d:0,l:1.8,w:1.4},{d:7,l:1.5,w:1.1}],
+    today:{d:14,len:1.1,wid:0.8,depth:"sup",ery:0,exu:"None",swell:false,warm:false,tender:false,pus:false,necro:false,
+      temp:36.6,hr:76,rr:16,glu:142,nopulse:false,lops:false,site:"mid",subj:"No complaints. Checking feet every evening as taught."}},
+  { id:"ahmad", name:"Ahmad Fauzi", age:69, sex:"M", dx:"Type 2 diabetes, 15 yrs; CKD stage 3", loc:"Kedungkandang",
+    history:[{d:0,l:2.4,w:2.0},{d:7,l:2.2,w:1.9},{d:14,l:2.0,w:1.8}],
+    today:{d:21,len:1.9,wid:1.7,depth:"sup",ery:0.3,exu:"Light",swell:false,warm:false,tender:true,pus:false,necro:false,
+      temp:37.0,hr:84,rr:18,glu:262,nopulse:true,lops:true,site:"fore",subj:"Missed insulin twice this week. Foot feels cold at night."}}
+];
+const ORIGINAL = JSON.parse(JSON.stringify(CASES));
+let current = "hadi";
+
+const $ = id => document.getElementById(id);
+const n = v => { const x = parseFloat(String(v).replace(",", ".")); return isFinite(x) ? x : NaN; };
+const f1 = v => isFinite(v) ? v.toFixed(1) : "—";
+const RANK = {red:3, amber:2, green:1};
+
+/* ---------- clinical rules ---------- */
+function assess(p){
+  const t = p.today, R = [];
+  const area = n(t.len) * n(t.wid);
+  const ery = n(t.ery) || 0;
+  const local = [t.swell, ery >= 0.5, t.tender, t.warm, t.pus].filter(Boolean).length;
+  const infected = local >= 2;
+  const sirsN = [(n(t.temp) > 38 || n(t.temp) < 36), n(t.hr) > 90, n(t.rr) > 20].filter(Boolean).length;
+  const sirs = sirsN >= 2;
+
+  let grade = 1;
+  if (infected) grade = sirs ? 4 : (ery > 2 || t.depth !== "sup") ? 3 : 2;
+  const gradeTxt = {1:"Uninfected",2:"Mild infection",3:"Moderate infection",4:"Severe infection"}[grade];
+
+  if (grade === 4) R.push(["red", `Foot infection with ${sirsN} systemic signs (temperature, heart rate, respiratory rate): IWGDF grade 4, severe.`, "ed"]);
+  if (grade === 3) R.push(["red", `Moderate infection: ${ery > 2 ? `erythema ${f1(ery)} cm beyond the edge` : "infection reaches tendon or bone"} (IWGDF grade 3).`, "sameday"]);
+  if (grade === 2) R.push(["amber", `Mild local infection: ${local} of 5 local signs present (IWGDF grade 2).`, "mild"]);
+  if (!infected && sirsN >= 2) R.push(["amber", "Systemic signs without clear local infection: look for another source.", "sirs"]);
+  if (t.necro) R.push(["red", "New necrosis or black tissue in or around the wound.", "necro"]);
+  if (t.depth === "bone") R.push([infected ? "red" : "amber", "Wound probes to bone: high suspicion of osteomyelitis.", "bone"]);
+  if (t.nopulse) R.push(infected ? ["red", "Infection in a foot without palpable pulses: ischaemia plus infection needs same-day review.", "pad"]
+                                 : ["amber", "Foot pulses not palpable: possible peripheral artery disease.", "padonly"]);
+  const g = n(t.glu);
+  if (g >= 400) R.push(["red", `Glucose ${g} mg/dL: risk of hyperglycaemic crisis.`, "glu"]);
+  else if (g > 250) R.push(["amber", `Glucose ${g} mg/dL: poor control slows healing and feeds infection.`, "glu"]);
+
+  /* trajectory */
+  const pts = p.history.map(h => ({d:h.d, a:h.l*h.w})).concat(isFinite(area) ? [{d:t.d, a:area}] : []);
+  const base = pts[0].a, last = pts.length > 1 ? pts[pts.length-2].a : NaN;
+  const traj = project(pts, base);
+  if (isFinite(area) && isFinite(last) && area > last * 1.1)
+    R.push(["amber", `Wound is ${Math.round((area/last-1)*100)}% larger than at the last visit.`, "grow"]);
+  if (traj && traj.red28 < 0.5)
+    R.push(["amber", `${traj.measured ? "Area reduction at week 4" : "Projected area reduction at week 4"} is ${Math.round(traj.red28*100)}% (target ≥ 50%): high risk the ulcer will not heal by week 12.`, "stall"]);
+
+  /* SINBAD */
+  const sin = {S:t.site !== "fore", I:t.nopulse, N:t.lops, B:infected, A:area >= 1, D:t.depth !== "sup"};
+  const sinScore = Object.values(sin).filter(Boolean).length;
+
+  const tier = R.reduce((m, r) => RANK[r[0]] > RANK[m] ? r[0] : m, "green");
+  if (tier === "green") R.push(["green", "No warning signs. Healing is on track.", "ok"]);
+  return {tier, R, grade, gradeTxt, local, sirsN, infected, area, pts, traj, sin, sinScore};
+}
+
+function project(pts, base){
+  if (pts.length < 2 || !(base > 0)) return null;
+  /* Baseline-to-latest line extended to day 28 (Sheehan: % change from baseline).
+     A wound that grew since the previous visit is never projected to keep shrinking. */
+  const k = pts.length, first = pts[0], last = pts[k-1], prev = pts[k-2];
+  if (last.d <= first.d) return null;
+  const measured = last.d >= 28;
+  const slope = (last.a - first.a) / (last.d - first.d);
+  let a28 = measured ? last.a : Math.max(0, first.a + slope*(28 - first.d));
+  if (!measured && last.a > prev.a) a28 = Math.max(a28, last.a);
+  return {slope, a28, red28: 1 - a28/base, measured, lastD: last.d};
+}
+
+function actions(a){
+  const keys = new Set(a.R.map(r => r[2])), out = [];
+  if (keys.has("ed")) return {main:"Refer to the emergency department now. Arrange transport and call the doctor on duty.",
+    list:["Do not wait for the next scheduled visit.","Send this note and the wound photo with the patient.","Check glucose again before transfer; record time of referral."], next:"Follow up by phone within 6 hours of referral"};
+  if (a.tier === "red") {
+    out.push("Same-day review by the diabetic foot team or surgeon.");
+    if (keys.has("pad")) out.push("Request urgent perfusion assessment (ankle-brachial index or toe pressure).");
+    if (keys.has("bone")) out.push("Ask the doctor about a foot X-ray to look for osteomyelitis.");
+    if (keys.has("necro")) out.push("Do not debride dry necrosis at home until perfusion is known.");
+    if (keys.has("glu")) out.push("Report glucose to the doctor; review insulin today.");
+    return {main:"Same-day medical review. Escalate today; do not wait for the next routine visit.", list:out, next:"Re-assess within 24 hours"};
+  }
+  if (a.tier === "amber") {
+    if (keys.has("mild")) out.push("Inform the doctor today about mild infection; consider a wound culture after cleansing and debridement.");
+    if (keys.has("stall") || keys.has("grow")) out.push("Review offloading at home and adherence; consider referral to a diabetic foot clinic.");
+    if (keys.has("padonly")) out.push("Request a perfusion check (ankle-brachial index) at the next clinic visit.");
+    if (keys.has("glu")) out.push("Review diet and medication with the family; share glucose log with the doctor.");
+    if (keys.has("sirs")) out.push("Recheck vital signs in 4 hours; escalate if they persist.");
+    return {main:"Nurse review within 24 hours and inform the doctor.", list:out, next:"Next home visit within 24–48 hours"};
+  }
+  return {main:"Continue the current plan.", list:["Moist wound dressing and offloading as planned.","Remind the family of red-flag signs: fever, spreading redness, bad smell, new black tissue."], next:"Next home visit in 3–4 days"};
+}
+
+/* ---------- rendering ---------- */
+const TIERTXT = {red:"Act today", amber:"Review within 24 h", green:"On track"};
+
+function renderCases(){
+  const rows = CASES.map(p => ({p, a:assess(p)})).sort((x,y) => RANK[y.a.tier]-RANK[x.a.tier] || x.p.name.localeCompare(y.p.name));
+  const c = {red:0, amber:0, green:0}; rows.forEach(r => c[r.a.tier]++);
+  $("counts").innerHTML = ["red","amber","green"].map(k => `<span class="cnt ${k}" title="${TIERTXT[k]}">${c[k]}</span>`).join("");
+  $("cases").innerHTML = rows.map(({p,a}) => `
+    <button class="case" data-id="${p.id}" aria-current="${p.id === current}">
+      <span class="stripe s-${a.tier}"></span>
+      <span style="min-width:0"><span class="nm">${p.name}</span><br><span class="sub">${p.age} ${p.sex} · ${p.loc} · day ${p.today.d}</span></span>
+      <span class="pill t-${a.tier}">${TIERTXT[a.tier]}</span>
+    </button>`).join("");
+}
+
+const FIELDS = ["len","wid","depth","ery","exu","swell","warm","tender","pus","necro","temp","hr","rr","glu","nopulse","lops","site","subj"];
+function fillForm(p){
+  FIELDS.forEach(k => { const el = $(k); if (el.type === "checkbox") el.checked = !!p.today[k]; else el.value = p.today[k]; });
+  $("pname").textContent = p.name;
+  $("pmeta").textContent = `${p.age} ${p.sex} · ${p.dx} · ${p.loc}, Malang`;
+  $("vday").textContent = `day ${p.today.d} since baseline`;
+}
+function readForm(p){
+  FIELDS.forEach(k => { const el = $(k); p.today[k] = el.type === "checkbox" ? el.checked : el.value; });
+}
+
+function chart(a, p){
+  const W = 560, H = 220, L = 44, Rr = 16, T = 14, B = 34;
+  const maxD = Math.max(35, a.pts[a.pts.length-1].d + 7);
+  const maxA = Math.max(...a.pts.map(x=>x.a), a.traj ? a.traj.a28 : 0) * 1.18 || 1;
+  const X = d => L + (d/maxD)*(W-L-Rr), Y = v => T + (1 - v/maxA)*(H-T-B);
+  const step = maxA > 8 ? 2 : maxA > 4 ? 1 : 0.5, yt = [];
+  for (let v = 0; v <= maxA; v += step) yt.push(v);
+  const xt = []; for (let d = 0; d <= maxD; d += 7) xt.push(d);
+  const base = a.pts[0].a, tgt = base * 0.5;
+  const line = a.pts.map((q,i) => `${i?"L":"M"}${X(q.d).toFixed(1)},${Y(q.a).toFixed(1)}`).join("");
+  let proj = "";
+  if (a.traj && !a.traj.measured){
+    const last = a.pts[a.pts.length-1];
+    proj = `<path d="M${X(last.d)},${Y(last.a)}L${X(28)},${Y(a.traj.a28)}" stroke="var(--accent)" stroke-width="2" stroke-dasharray="5 4" fill="none"/>
+            <circle cx="${X(28)}" cy="${Y(a.traj.a28)}" r="4.5" fill="var(--surface)" stroke="var(--accent)" stroke-width="2"/>`;
+  }
+  const col = a.traj && a.traj.red28 < 0.5 ? "var(--amber)" : "var(--green)";
+  return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Wound area over time for ${p.name}">
+    ${yt.map(v => `<line x1="${L}" x2="${W-Rr}" y1="${Y(v)}" y2="${Y(v)}" stroke="var(--line)" stroke-width="1"/>
+      <text x="${L-8}" y="${Y(v)+4}" text-anchor="end" font-size="11" fill="var(--ink-3)" font-family="JetBrains Mono, monospace">${v}</text>`).join("")}
+    ${xt.map(d => `<text x="${X(d)}" y="${H-12}" text-anchor="middle" font-size="11" fill="var(--ink-3)" font-family="JetBrains Mono, monospace">d${d}</text>`).join("")}
+    <text x="${L}" y="${T-2}" font-size="11" fill="var(--ink-3)" font-family="Inter, sans-serif">cm²</text>
+    <line x1="${X(28)}" x2="${X(28)}" y1="${T}" y2="${H-B}" stroke="var(--line-2)" stroke-width="1"/>
+    <text x="${X(28)+5}" y="${T+10}" font-size="11" fill="var(--ink-2)" font-family="Inter, sans-serif">week 4</text>
+    <line x1="${L}" x2="${W-Rr}" y1="${Y(tgt)}" y2="${Y(tgt)}" stroke="var(--ink-3)" stroke-width="1.5" stroke-dasharray="2 4"/>
+    <path d="${line}" stroke="var(--accent)" stroke-width="2.5" fill="none" stroke-linejoin="round"/>
+    ${proj}
+    ${a.pts.map((q,i) => `<circle cx="${X(q.d)}" cy="${Y(q.a)}" r="${i===a.pts.length-1?5.5:4}" fill="${i===a.pts.length-1?col:"var(--accent)"}" stroke="var(--surface)" stroke-width="1.5"/>`).join("")}
+  </svg>`;
+}
+
+function soap(a, p, act){
+  const t = p.today, signs = [t.swell&&"swelling", n(t.ery)>=0.5&&`erythema ${f1(n(t.ery))} cm`, t.warm&&"warmth", t.tender&&"tenderness", t.pus&&"purulent discharge", t.necro&&"new necrosis"].filter(Boolean);
+  const depth = {sup:"skin/subcutis", ten:"tendon/capsule", bone:"probes to bone"}[t.depth];
+  const trend = a.traj ? `${a.traj.measured?"Week-4 area reduction":"Projected week-4 reduction"} ${Math.round(a.traj.red28*100)}% (target ≥50%).` : "Only one measurement; trend not yet available.";
+  return `S: ${t.subj || "—"}
+
+O: Day ${t.d}. Ulcer ${({fore:"forefoot",mid:"midfoot",hind:"hindfoot/heel"})[t.site]}, ${f1(n(t.len))} × ${f1(n(t.wid))} cm (${f1(a.area)} cm²), deepest tissue ${depth}. Exudate ${t.exu.toLowerCase()}.
+   Local signs: ${signs.length ? signs.join(", ") : "none"}.
+   T ${t.temp} °C, HR ${t.hr}/min, RR ${t.rr}/min, glucose ${t.glu} mg/dL.
+   Pulses ${t.nopulse ? "not palpable" : "palpable"}; protective sensation ${t.lops ? "lost" : "intact"}.
+
+A: IWGDF/IDSA grade ${a.grade} (${a.gradeTxt.toLowerCase()}). SINBAD ${a.sinScore}/6.
+   ${trend}
+   Woundex tier: ${a.tier.toUpperCase()} (${TIERTXT[a.tier].toLowerCase()}).
+
+P: ${act.main}
+${act.list.map(x => "   - " + x).join("\n")}
+   ${act.next}.`;
+}
+
+function render(){
+  const p = CASES.find(c => c.id === current), a = assess(p), act = actions(a);
+  const v = $("verdict"); v.className = "verdict " + a.tier;
+  $("lvl").textContent = TIERTXT[a.tier];
+  $("act").textContent = act.main;
+
+  $("iw").textContent = `Grade ${a.grade}`;
+  $("iwd").textContent = `${a.gradeTxt} · ${a.local}/5 local, ${a.sirsN}/3 systemic signs`;
+  $("sb").textContent = `${a.sinScore}/6`;
+  $("sbd").textContent = Object.entries(a.sin).filter(([,x])=>x).map(([k])=>k).join(" ") ? `Present: ${Object.entries(a.sin).filter(([,x])=>x).map(([k])=>k).join(" · ")}` : "No risk factors";
+  $("pr").textContent = a.traj ? `${a.traj.red28 >= 0 ? "−" : "+"}${Math.abs(Math.round(a.traj.red28*100))}%` : "—";
+  $("prd").textContent = a.traj ? (a.traj.measured ? "Measured change since baseline" : "Projected change from trend") : "Needs two measurements";
+  $("pr").style.color = a.traj ? (a.traj.red28 >= 0.5 ? "var(--green)" : "var(--amber)") : "";
+
+  $("why").innerHTML = a.R.sort((x,y)=>RANK[y[0]]-RANK[x[0]]).map(r => `<li><span class="dot d-${r[0]}"></span><span>${r[1]}</span></li>`).join("");
+  $("todo").innerHTML = act.list.map(x => `<li>${x}</li>`).join("") + `<li>${act.next}.</li>`;
+
+  $("chart").innerHTML = chart(a, p);
+  $("traj").innerHTML = a.traj
+    ? `Baseline <b>${f1(a.pts[0].a)} cm²</b> → today <b>${f1(a.area)} cm²</b>. ${a.traj.measured ? "Measured" : "Projected"} at week 4: <b>${f1(a.traj.a28)} cm²</b>, ${a.traj.red28 >= 0.5 ? "on track to heal by week 12." : "below the 50% target: likely to stay open past week 12 without a change in care."}`
+    : "Add another measurement to see the trend.";
+  $("soap").textContent = soap(a, p, act);
+  renderCases();
+}
+
+/* ---------- events ---------- */
+$("form").addEventListener("input", () => { readForm(CASES.find(c => c.id === current)); render(); });
+$("form").addEventListener("submit", e => e.preventDefault());
+$("cases").addEventListener("click", e => {
+  const b = e.target.closest("[data-id]"); if (!b) return;
+  current = b.dataset.id; fillForm(CASES.find(c => c.id === current)); render();
+});
+$("reset").addEventListener("click", () => {
+  const i = CASES.findIndex(c => c.id === current);
+  CASES[i] = JSON.parse(JSON.stringify(ORIGINAL[i])); fillForm(CASES[i]); render();
+});
+$("copy").addEventListener("click", () => {
+  const txt = $("soap").textContent;
+  const done = () => { $("copied").textContent = "Note copied."; };
+  const fallback = () => { const r = document.createRange(); r.selectNodeContents($("soap")); const s = getSelection(); s.removeAllRanges(); s.addRange(r); $("copied").textContent = "Selected. Press Ctrl+C to copy."; };
+  try { navigator.clipboard.writeText(txt).then(done, fallback); } catch { fallback(); }
+});
+
+fillForm(CASES.find(c => c.id === current));
+render();
+</script>
