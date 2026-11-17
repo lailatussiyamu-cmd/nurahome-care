@@ -45,6 +45,7 @@ export default function HomePage() {
     consents: [],
     visitReports: [],
     testimoni: [],
+    woundexChecks: [],
   });
   const [isLoading, setIsLoading] = useState(true);
   const [gagalMuat, setGagalMuat] = useState(false);
@@ -409,6 +410,7 @@ export default function HomePage() {
                 testimoni={testimoniSaya}
                 providerDocuments={data.providerDocuments || []}
                 payouts={data.payouts || []}
+                woundexChecks={saring(data.woundexChecks || [])}
                 onRefresh={loadPlatformData}
               />
             )}
@@ -423,6 +425,7 @@ export default function HomePage() {
                 providerDocuments={data.providerDocuments || []}
                 verificationReviews={data.verificationReviews || []}
                 payouts={data.payouts || []}
+                woundexChecks={data.woundexChecks || []}
                 sambunganAi={data.sambunganAi}
                 sesi={sesi}
                 onRefresh={loadPlatformData}

@@ -6,6 +6,7 @@ import { TUGAS, TENGGAT } from "@/logic/tugas";
 import { PanelTestimoniAdmin } from "./PanelTestimoniAdmin";
 import { PanelVerifikasiAdmin } from "./PanelVerifikasiAdmin";
 import { PanelBagiHasilAdmin } from "./PanelBagiHasilAdmin";
+import { PanelWoundexAdmin } from "./PanelWoundexAdmin";
 import { rp } from "@/logic/biaya";
 import {
   Sparkles,
@@ -30,6 +31,7 @@ interface AdminPortalProps {
   providerDocuments: any[];
   verificationReviews: any[];
   payouts: any[];
+  woundexChecks?: any[];
   sambunganAi?: { siap: boolean; penyedia: string | null; model: string; alasan: string };
   sesi: { nama: string | null; peran: string };
   onRefresh: () => void;
@@ -44,6 +46,7 @@ export function AdminPortal({
   providerDocuments,
   verificationReviews,
   payouts,
+  woundexChecks = [],
   sambunganAi,
   sesi,
   onRefresh,
@@ -228,6 +231,8 @@ export function AdminPortal({
           </>
         )}
       </div>
+
+      <PanelWoundexAdmin pengkajian={woundexChecks} bookings={bookings} />
 
       <PanelBagiHasilAdmin payouts={payouts ?? []} onSelesai={onRefresh} />
 

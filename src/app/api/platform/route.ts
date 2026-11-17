@@ -47,8 +47,17 @@ import {
   testimoni,
   providerDocuments,
   verificationReviews,
+  woundexChecks,
 } from "@/db/schema";
 import { ensureSeeded } from "@/db/seed";
+import {
+  bacaSinyal,
+  nilaiWoundex,
+  selisihHari,
+  NAMA_TINGKAT,
+  VERSI_ATURAN_WOUNDEX,
+  type TitikLuas,
+} from "@/logic/woundex";
 import {
   aktorDariPermintaan,
   perawatDariAktor,
@@ -1039,6 +1048,126 @@ export async function POST(req: NextRequest) {
       });
 
       return NextResponse.json({ success: true, clinicalNote: note });
+    }
+
+    /**
+     * Woundex: pengkajian peringatan dini luka kaki diabetik.
+     *
+     * Keputusannya (MERAH / KUNING / HIJAU) dihitung DI SINI, di server,
+     * dari aturan di logic/woundex.ts — bukan dikirim dari layar. Layar
+     * hanya mengirim apa yang diukur perawat. Sama alasannya dengan tanda
+     * bahaya di asisten: keputusan yang bisa berujung ke IGD tidak boleh
+     * bisa diubah dari browser.
+     *
+     * Hanya untuk perawatan luka, hanya oleh perawat yang memegang
+     * kunjungannya, dan hanya saat ia memang sedang di rumah pasien.
+     */
+    if (action === "SIMPAN_WOUNDEX") {
+      const halangan = harusPerawat(aktor);
+      if (halangan) return NextResponse.json({ error: halangan }, { status: 403 });
+
+      const [pesanan] = await db
+        .select()
+        .from(bookings)
+        .where(eq(bookings.id, Number(body?.bookingId)));
+      if (!pesanan)
+        return NextResponse.json({ error: "Pemesanan tidak ditemukan." }, { status: 404 });
+      if (!pesananDipegangPerawat(aktor, pesanan))
+        return NextResponse.json({ error: "Ini bukan kunjungan Anda." }, { status: 403 });
+      if (pesanan.serviceCategory !== "WOUND_CARE")
+        return NextResponse.json({ error: "Woundex hanya untuk perawatan luka." }, { status: 400 });
+      if (![S.PERAWAT_TIBA, S.DIKERJAKAN].includes(pesanan.status as any))
+        return NextResponse.json(
+          { error: "Pengkajian Woundex diisi saat Anda sudah tiba di rumah pasien." },
+          { status: 409 }
+        );
+
+      const terbaca = bacaSinyal(body?.sinyal);
+      if ("galat" in terbaca) return NextResponse.json({ error: terbaca.galat }, { status: 400 });
+      const s = terbaca.sinyal;
+
+      /**
+       * Riwayat luas pasien ini, dari SEMUA kunjungannya — termasuk yang
+       * dipegang perawat lain. Tren penyembuhan adalah milik pasien, bukan
+       * milik satu kunjungan. Yang dibaca hanya tanggal dan luasnya, dan
+       * yang dikirim ke layar hanya titik-titik itu (lewat kolom hasil).
+       */
+      const [lama, garis] = await Promise.all([
+        db.select().from(woundexChecks).where(eq(woundexChecks.patientId, pesanan.patientId)),
+        db.select().from(woundTimelineEntries).where(eq(woundTimelineEntries.patientId, pesanan.patientId)),
+      ]);
+      const sekarang = new Date();
+      const mentah: { tgl: Date; luas: number }[] = [
+        ...lama.map((w) => ({ tgl: new Date(w.createdAt), luas: w.panjangCm * w.lebarCm })),
+        ...garis
+          .filter((g) => !lama.some((w) => w.bookingId === g.bookingId))
+          .map((g) => ({ tgl: new Date(`${g.dateRecorded}T00:00:00Z`), luas: Number(g.areaSqCm) })),
+      ]
+        .filter((t) => t.luas > 0 && !Number.isNaN(t.tgl.getTime()) && t.tgl <= sekarang)
+        .sort((a, b) => a.tgl.getTime() - b.tgl.getTime());
+
+      const awal = mentah[0]?.tgl ?? sekarang;
+      const hariIni = selisihHari(awal, sekarang);
+      /** Satu titik per hari; pengukuran hari ini menggantikan yang lain di hari yang sama. */
+      const perHari = new Map<number, number>();
+      for (const t of mentah) perHari.set(selisihHari(awal, t.tgl), t.luas);
+      perHari.delete(hariIni);
+      const riwayat: TitikLuas[] = [...perHari.entries()]
+        .sort((a, b) => a[0] - b[0])
+        .map(([hari, luas]) => ({ hari, luas }));
+
+      const hasil = nilaiWoundex(s, riwayat, hariIni);
+      const perawat = await perawatDariAktor(aktor);
+      const namaPerawat = perawat?.fullName ?? pesanan.providerName ?? "Perawat";
+
+      const [baris] = await db
+        .insert(woundexChecks)
+        .values({
+          bookingId: pesanan.id,
+          patientId: pesanan.patientId,
+          providerId: perawat?.id ?? pesanan.providerId ?? 0,
+          providerName: namaPerawat,
+          ...s,
+          nadi: Math.round(s.nadi),
+          napas: Math.round(s.napas),
+          gulaDarah: s.gulaDarah === null ? null : Math.round(s.gulaDarah),
+          tingkat: hasil.tingkat,
+          derajatIwgdf: hasil.derajatIwgdf,
+          sinbad: hasil.sinbad,
+          reduksiMinggu4: hasil.proyeksi?.reduksiMinggu4 ?? null,
+          hariKe: hariIni,
+          hasil: JSON.stringify(hasil),
+          versiAturan: VERSI_ATURAN_WOUNDEX,
+        })
+        .returning();
+
+      await db.insert(auditLogs).values({
+        userId: aktor.userId,
+        userRole: aktor.peran,
+        action: "WOUNDEX_DINILAI",
+        resourceType: "woundex_checks",
+        resourceId: String(pesanan.id),
+        details: `${namaPerawat} mengkaji ${pesanan.bookingCode} dengan Woundex: ${hasil.tingkat} (IWGDF ${hasil.derajatIwgdf}, SINBAD ${hasil.sinbad}/6).`,
+      });
+
+      /**
+       * MERAH sampai ke admin saat itu juga. Perawat di lapangan sedang
+       * menangani pasiennya; koordinator yang mengatur rujukan dan
+       * kunjungan berikutnya perlu tahu tanpa menunggu laporan ditutup.
+       */
+      if (hasil.tingkat === "MERAH") {
+        const idAdmin = (await db.select().from(users).where(eq(users.role, "ADMIN"))).map((u) => u.id);
+        for (const a of idAdmin) {
+          await db.insert(notifications).values({
+            userId: a,
+            title: `WOUNDEX MERAH — ${pesanan.bookingCode}`,
+            message: `${NAMA_TINGKAT.MERAH}. ${hasil.tindakan.utama} Dikaji oleh ${namaPerawat}.`,
+            type: "TRIAGE",
+          });
+        }
+      }
+
+      return NextResponse.json({ success: true, woundex: baris, hasil });
     }
 
     /** Pesan antara pasien dan perawat pada satu kunjungan. */

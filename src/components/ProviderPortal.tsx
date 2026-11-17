@@ -6,6 +6,7 @@ import { S, namaStatus, inisial } from "@/logic/alur";
 
 import { PanelTinjauan } from "./PanelTinjauan";
 import { PanelKunjungan } from "./PanelKunjungan";
+import { PanelWoundex } from "./PanelWoundex";
 import { PanelNilaiPerawat } from "./PanelNilaiPerawat";
 import { PanelVerifikasiPerawat } from "./PanelVerifikasiPerawat";
 import { rp, honorPerawat, PORSI_PERAWAT } from "@/logic/biaya";
@@ -46,6 +47,7 @@ interface ProviderPortalProps {
   testimoni: any[];
   providerDocuments: any[];
   payouts: any[];
+  woundexChecks?: any[];
   masihDisortir?: number;
   onRefresh: () => void;
 }
@@ -66,6 +68,7 @@ export function ProviderPortal({
   testimoni,
   providerDocuments,
   payouts,
+  woundexChecks = [],
   onRefresh,
 }: ProviderPortalProps) {
   const [selectedBookingId, setSelectedBookingId] = useState<number>(
@@ -525,6 +528,18 @@ export function ProviderPortal({
               booking={activeBooking}
               foto={fotoKunjungan}
               sesi={sesi}
+              onSelesai={onRefresh}
+            />
+          )}
+
+          {/* Woundex: peringatan dini luka kaki diabetik. Bisa diisi saat
+              perawat sudah tiba; hasil terakhirnya tetap terlihat setelah
+              kunjungan selesai. Panel menyembunyikan dirinya sendiri untuk
+              layanan selain perawatan luka. */}
+          {[S.PERAWAT_TIBA, S.DIKERJAKAN, S.SELESAI].includes(activeBooking?.status) && (
+            <PanelWoundex
+              booking={activeBooking}
+              pengkajian={woundexChecks.filter((w: any) => w.bookingId === activeBooking?.id)}
               onSelesai={onRefresh}
             />
           )}

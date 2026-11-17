@@ -56,6 +56,7 @@ import {
   payments,
   paymentEvents,
   payouts,
+  woundexChecks,
 } from "@/db/schema";
 import type { Aktor } from "./aktor";
 import { S } from "@/logic/alur";
@@ -190,6 +191,7 @@ const KOSONG = {
   payments: [] as any[],
   paymentEvents: [] as any[],
   payouts: [] as any[],
+  woundexChecks: [] as any[],
 };
 
 export async function susunTampilan(a: Aktor) {
@@ -249,7 +251,7 @@ export async function susunTampilan(a: Aktor) {
   /* ---------------- ADMIN: semuanya ---------------- */
   if (a.peran === "ADMIN") {
     const [
-      b, wa, ca, cn, wt, dep, adr, rev, notif, msg, audit, foto, u, qi, con, vr, tes, pd, vrev, ses, pay, payEv, bagi,
+      b, wa, ca, cn, wt, dep, adr, rev, notif, msg, audit, foto, u, qi, con, vr, tes, pd, vrev, ses, pay, payEv, bagi, wx,
     ] = await Promise.all([
       db.select().from(bookings).orderBy(desc(bookings.createdAt)),
       db.select().from(woundAssessments).orderBy(desc(woundAssessments.createdAt)),
@@ -279,6 +281,7 @@ export async function susunTampilan(a: Aktor) {
        */
       db.select().from(paymentEvents).orderBy(desc(paymentEvents.at)).limit(200),
       db.select().from(payouts).orderBy(desc(payouts.createdAt)),
+      db.select().from(woundexChecks).orderBy(desc(woundexChecks.createdAt)),
     ]);
 
     return {
@@ -318,6 +321,7 @@ export async function susunTampilan(a: Aktor) {
       payments: pay,
       paymentEvents: payEv,
       payouts: bagi,
+      woundexChecks: wx,
       /**
        * Keadaan sambungan AI, apa adanya, hanya untuk admin.
        *
@@ -389,12 +393,18 @@ export async function susunTampilan(a: Aktor) {
     ambil(woundTimelineEntries, woundTimelineEntries.bookingId, idMilik),
   ]);
 
-  const [catatan, penawaran, persetujuan, laporan, pesan] = await Promise.all([
+  const [catatan, penawaran, persetujuan, laporan, pesan, kajiWoundex] = await Promise.all([
     ambil(clinicalNotes, clinicalNotes.bookingId, idMilik),
     ambil(quoteItems, quoteItems.bookingId, idMilik),
     ambil(consents, consents.bookingId, idMilik),
     ambil(visitReports, visitReports.bookingId, idMilik),
     ambil(messages, messages.bookingId, idMilik),
+    /**
+     * Woundex hanya untuk perawat yang memegang kunjungannya. Pasien tidak
+     * menerima baris ini: isinya bahasa klinis untuk mengambil keputusan,
+     * dan yang perlu diketahui pasien disampaikan perawatnya.
+     */
+    a.peran === "PROVIDER" ? ambil(woundexChecks, woundexChecks.bookingId, idMilik) : Promise.resolve([]),
   ]);
 
   /**
@@ -536,6 +546,7 @@ export async function susunTampilan(a: Aktor) {
     providerDocuments: berkasSaya,
     payments: bayarSaya,
     payouts: bagiHasilSaya,
+    woundexChecks: kajiWoundex,
     /**
      * auditLogs SENGAJA kosong untuk pasien dan perawat.
      *

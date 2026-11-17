@@ -319,6 +319,55 @@ export const woundTimelineEntries = pgTable("wound_timeline_entries", {
   imageUrl: text("image_url"),
 });
 
+/**
+ * Woundex — satu baris per pengkajian peringatan dini luka kaki diabetik.
+ *
+ * Sinyal yang diukur perawat disimpan APA ADANYA, dan hasilnya disimpan
+ * bersamanya. Hasil tidak dihitung ulang saat dibaca: kalau aturannya
+ * kelak berubah, yang tercatat tetap keputusan yang dilihat perawat saat
+ * itu — itulah yang dipertanggungjawabkan. `versiAturan` mencatat aturan
+ * mana yang dipakai.
+ *
+ * `riwayatLuas` adalah salinan titik-titik luas yang dipakai untuk tren,
+ * supaya perawat tidak perlu diberi akses ke kunjungan lama pasien yang
+ * dipegang perawat lain hanya untuk melihat grafiknya.
+ */
+export const woundexChecks = pgTable("woundex_checks", {
+  id: serial("id").primaryKey(),
+  bookingId: integer("booking_id").notNull(),
+  patientId: integer("patient_id").notNull(),
+  providerId: integer("provider_id").notNull(),
+  providerName: text("provider_name").notNull(),
+
+  panjangCm: doublePrecision("panjang_cm").notNull(),
+  lebarCm: doublePrecision("lebar_cm").notNull(),
+  kedalaman: text("kedalaman").notNull(), // KULIT | TENDON | TULANG
+  eritemaCm: doublePrecision("eritema_cm").notNull(),
+  bengkak: boolean("bengkak").notNull(),
+  hangat: boolean("hangat").notNull(),
+  nyeriTekan: boolean("nyeri_tekan").notNull(),
+  nanah: boolean("nanah").notNull(),
+  nekrosisBaru: boolean("nekrosis_baru").notNull(),
+  suhuC: doublePrecision("suhu_c").notNull(),
+  nadi: integer("nadi").notNull(),
+  napas: integer("napas").notNull(),
+  /** null = tidak diukur. Bukan 0. */
+  gulaDarah: integer("gula_darah"),
+  nadiKakiTakTeraba: boolean("nadi_kaki_tak_teraba").notNull(),
+  sensasiHilang: boolean("sensasi_hilang").notNull(),
+  lokasi: text("lokasi").notNull(), // DEPAN | TENGAH | BELAKANG
+
+  tingkat: text("tingkat").notNull(), // MERAH | KUNING | HIJAU
+  derajatIwgdf: integer("derajat_iwgdf").notNull(),
+  sinbad: integer("sinbad").notNull(),
+  reduksiMinggu4: doublePrecision("reduksi_minggu4"),
+  hariKe: integer("hari_ke").notNull(),
+  /** JSON: HasilWoundex lengkap (alasan, tindakan, proyeksi, titik). */
+  hasil: text("hasil").notNull(),
+  versiAturan: text("versi_aturan").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 export const reviews = pgTable("reviews", {
   id: serial("id").primaryKey(),
   bookingId: integer("booking_id").notNull(),
