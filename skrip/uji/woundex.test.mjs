@@ -19,15 +19,14 @@
 
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
-import { AKUN, diterima, ditolak, kabar, kirimKabar, masuk, siapkanPemesanan } from "./bantu.mjs";
+import { AKUN, diterima, ditolak, kabar, kirimKabar, majukanKunjungan, masuk, siapkanPemesanan } from "./bantu.mjs";
 
 /** Membawa satu pemesanan sampai perawat tiba di rumah pasien. */
 async function perawatSudahTiba() {
   const { id, kode, pasien, perawat } = await siapkanPemesanan();
   await pasien.kirim("/api/pembayaran", { bookingId: id });
   diterima(await kirimKabar(kabar(`${kode}-1`)), "kabar pembayaran lunas");
-  for (const status of ["PERAWAT_BERANGKAT", "PERAWAT_TIBA"])
-    diterima(await perawat.aksi({ action: "UPDATE_BOOKING_STATUS", bookingId: id, status }), `status ${status}`);
+  await majukanKunjungan(perawat, id, "PERAWAT_TIBA");
   return { id, kode, pasien, perawat };
 }
 

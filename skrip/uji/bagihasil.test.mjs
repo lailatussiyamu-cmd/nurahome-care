@@ -27,6 +27,7 @@ import {
   ditolak,
   kabar,
   kirimKabar,
+  majukanKunjungan,
   masuk,
   siapkanPemesanan,
 } from "./bantu.mjs";
@@ -58,9 +59,7 @@ async function kunjunganSelesai({ bayarDulu = true } = {}) {
     diterima(await kirimKabar(kabar(`${kode}-1`)), "kabar pembayaran lunas");
   }
 
-  for (const status of ["PERAWAT_BERANGKAT", "PERAWAT_TIBA", "DIKERJAKAN"]) {
-    if (bayarDulu) await perawat.aksi({ action: "UPDATE_BOOKING_STATUS", bookingId: id, status });
-  }
+  if (bayarDulu) await majukanKunjungan(perawat, id);
 
   return { id, kode, pasien, perawat };
 }
@@ -147,7 +146,14 @@ describe("Kapan bagi hasil tercatat", () => {
      * platform menjanjikan uang yang belum ia pegang.
      */
     const { id, perawat } = await kunjunganSelesai({ bayarDulu: false });
-    await tutupLaporan(perawat, id); // ditolak alurnya, memang begitu
+    // Ditolak alurnya, memang begitu. (Foto buktinya pun sekarang ditolak
+    // sebelum perawat berangkat, jadi langsung mencoba menutup laporan.)
+    await perawat.aksi({
+      action: "SIMPAN_LAPORAN",
+      bookingId: id,
+      whatWasDone: "Balutan diganti.",
+      homeInstructions: "Jaga tetap kering.",
+    });
 
     const admin = await masuk(AKUN.admin);
     assert.equal(

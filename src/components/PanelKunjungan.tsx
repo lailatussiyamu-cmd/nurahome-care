@@ -19,7 +19,7 @@ import React, { useState } from "react";
 import { S } from "@/logic/alur";
 import { fotoSudahDihapus } from "@/logic/tugas";
 import { kecilkanGambar, penghalangBerkas } from "@/logic/gambar";
-import { Camera, Navigation, MapPin, CheckCircle2, FileText } from "lucide-react";
+import { Camera, Navigation, MapPin, CheckCircle2, FileText, ShieldAlert, Phone } from "lucide-react";
 
 interface Props {
   booking: any;
@@ -53,6 +53,34 @@ export function PanelKunjungan({ booking, foto, sesi, onSelesai }: Props) {
   );
   const [kunjunganBerikut, setKunjunganBerikut] = useState("");
   const [bahanTerpakai, setBahanTerpakai] = useState("");
+
+  // Minta bantuan: dibuka dulu (satu ketukan tidak langsung mengirim),
+  // lalu dikirim. Jawabannya ditampilkan apa adanya.
+  const [bantuanTerbuka, setBantuanTerbuka] = useState(false);
+  const [catatanBantuan, setCatatanBantuan] = useState("");
+  const [jawabanBantuan, setJawabanBantuan] = useState<string | null>(null);
+
+  const mintaBantuan = async () => {
+    setSibuk(true);
+    setGalat(null);
+    try {
+      const res = await fetch("/api/platform", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "MINTA_BANTUAN", bookingId: booking.id, catatan: catatanBantuan }),
+      });
+      const jawab = await res.json().catch(() => ({}));
+      if (!res.ok) setGalat(jawab?.error ?? "Permintaan bantuan gagal terkirim. Telepon 112 bila Anda dalam bahaya.");
+      else {
+        setJawabanBantuan(jawab?.pesan ?? "Admin sudah diberi tahu.");
+        setBantuanTerbuka(false);
+      }
+    } catch {
+      setGalat("Tidak bisa menghubungi server. Telepon 112 bila Anda dalam bahaya.");
+    } finally {
+      setSibuk(false);
+    }
+  };
 
   const punya = (j: JenisFoto) => foto.some((f: any) => f.photoType === j);
   const perluFotoLuka = booking?.serviceCategory === "WOUND_CARE";
@@ -356,6 +384,57 @@ export function PanelKunjungan({ booking, foto, sesi, onSelesai }: Props) {
             </div>
           )}
         </>
+      )}
+
+      {/* ---- keselamatan perawat ----
+          Perawat bekerja sendirian di rumah orang asing. Tombolnya selalu
+          ada selama kunjungan berjalan, sengaja tidak mencolok supaya tidak
+          menakuti keluarga yang ikut melihat layar. */}
+      {[S.PERAWAT_BERANGKAT, S.PERAWAT_TIBA, S.DIKERJAKAN].includes(booking.status) && (
+        <div className="border-t border-nh-garis pt-4 space-y-2">
+          {jawabanBantuan && (
+            <p className="text-xs text-nh-sembuh leading-relaxed" role="status">{jawabanBantuan}</p>
+          )}
+          {!bantuanTerbuka ? (
+            <button
+              onClick={() => setBantuanTerbuka(true)}
+              className="w-full text-xs font-semibold text-nh-kabut hover:text-nh-bahaya flex items-center justify-center gap-1.5 py-2"
+            >
+              <ShieldAlert className="w-4 h-4" /> Saya butuh bantuan
+            </button>
+          ) : (
+            <div className="space-y-2 rounded-xl border border-nh-bahaya/40 bg-nh-bahaya/5 p-3">
+              <p className="text-xs text-nh-putih leading-relaxed">
+                Admin akan langsung menerima alamat ini dan menelepon Anda. Pasien tidak diberi tahu.
+              </p>
+              <textarea
+                value={catatanBantuan}
+                onChange={(e) => setCatatanBantuan(e.target.value)}
+                placeholder="Opsional: apa yang terjadi"
+                rows={2}
+                className="nh-isian w-full px-3 py-2 text-sm"
+              />
+              <div className="flex gap-2">
+                <button
+                  onClick={mintaBantuan}
+                  disabled={sibuk}
+                  className="flex-1 rounded-xl bg-nh-bahaya text-white text-sm font-bold py-2.5"
+                >
+                  {sibuk ? "Mengirim…" : "Kirim permintaan bantuan"}
+                </button>
+                <a
+                  href="tel:112"
+                  className="rounded-xl border border-nh-bahaya text-nh-bahaya text-sm font-bold px-3 py-2.5 flex items-center gap-1"
+                >
+                  <Phone className="w-4 h-4" /> 112
+                </a>
+              </div>
+              <button onClick={() => setBantuanTerbuka(false)} className="w-full text-xs text-nh-kabut py-1">
+                Batal
+              </button>
+            </div>
+          )}
+        </div>
       )}
 
       {/* Saat DIKERJAKAN galatnya sudah tampil di kotak laporan di atas.

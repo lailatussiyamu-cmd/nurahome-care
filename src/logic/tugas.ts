@@ -57,6 +57,17 @@ export const TENGGAT = {
   /** Kunjungan yang perawatnya lupa menutup laporannya. */
   belumDitutupJam: 12,
 
+  /**
+   * Keselamatan perawat: berapa lama sejak foto kedatangan sebelum admin
+   * diminta menghubungi perawatnya.
+   *
+   * Perawatan luka di rumah jarang lebih dari 1,5 jam. Tiga jam tanpa
+   * laporan ditutup cukup longgar untuk kunjungan yang memang panjang, dan
+   * cukup pendek untuk perawat yang celaka di rumah orang asing — yang
+   * justru tidak bisa menekan tombol bantuan.
+   */
+  perawatDiRumahJam: 3,
+
   /** Pengingat ke pasien & perawat sebelum jadwal kunjungan. */
   pengingatJam: 24,
 
@@ -219,6 +230,7 @@ export type NamaTugas =
   | "permintaan-menggantung"
   | "belum-dibayar"
   | "kunjungan-belum-ditutup"
+  | "perawat-belum-kabar"
   | "pengingat-kunjungan";
 
 export const TUGAS: { nama: NamaTugas; jadwal: string; penjelasan: string }[] = [
@@ -263,6 +275,11 @@ export const TUGAS: { nama: NamaTugas; jadwal: string; penjelasan: string }[] = 
     jadwal: "setiap 3 jam",
     penjelasan:
       "Kunjungan yang laporannya belum ditandatangani setelah 12 jam diingatkan ke perawatnya.",
+  },
+  {
+    nama: "perawat-belum-kabar",
+    jadwal: "setiap 30 menit",
+    penjelasan: `Keselamatan perawat: kunjungan yang belum ditutup ${TENGGAT.perawatDiRumahJam} jam setelah perawat tiba dilaporkan ke admin, supaya ada yang menghubungi perawatnya. Perawat yang celaka tidak bisa menekan tombol bantuan.`,
   },
   {
     nama: "pengingat-kunjungan",

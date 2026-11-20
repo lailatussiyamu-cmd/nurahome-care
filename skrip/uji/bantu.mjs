@@ -237,6 +237,37 @@ export async function siapkanPemesanan(sampai = TAHAP.DISETUJUI) {
   return { id, kode, pasien, perawat };
 }
 
+/** JPEG kecil untuk foto bukti di tes — isinya tidak penting. */
+export const FOTO_KECIL = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgGBgcGBQgHBwcJ";
+
+/**
+ * Membawa kunjungan yang sudah DIBAYAR maju lewat jalan yang sama dengan
+ * perawat sungguhan: berangkat, FOTO kedatangan (satu-satunya cara
+ * menandai tiba), lalu mulai tindakan.
+ */
+export async function majukanKunjungan(perawat, id, sampai = "DIKERJAKAN") {
+  diterima(
+    await perawat.aksi({ action: "UPDATE_BOOKING_STATUS", bookingId: id, status: "PERAWAT_BERANGKAT" }),
+    "perawat berangkat"
+  );
+  if (sampai === "PERAWAT_BERANGKAT") return;
+  diterima(
+    await perawat.aksi({
+      action: "UPLOAD_TASK_PHOTO",
+      bookingId: id,
+      photoType: "ARRIVAL_CONFIRMATION",
+      imageUrl: FOTO_KECIL,
+      caption: "tiba",
+    }),
+    "foto kedatangan"
+  );
+  if (sampai === "PERAWAT_TIBA") return;
+  diterima(
+    await perawat.aksi({ action: "UPDATE_BOOKING_STATUS", bookingId: id, status: "DIKERJAKAN" }),
+    "mulai tindakan"
+  );
+}
+
 export function tanggalNanti(hari) {
   const d = new Date();
   d.setDate(d.getDate() + hari);

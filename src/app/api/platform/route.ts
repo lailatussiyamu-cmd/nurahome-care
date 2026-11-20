@@ -77,9 +77,52 @@ import {
   penghalangPutusVerifikasi,
   type StatusVerifikasi,
 } from "@/logic/verifikasi";
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import { catatBagiHasil } from "@/server/bagihasil";
 import { penghalangPembayaranHonor, type StatusBagiHasil } from "@/logic/bagihasil";
+import { setelahDibatalkan } from "@/server/pembatalan";
+import { beritahuSemuaAdmin } from "@/server/pemberitahuan";
+
+/** Jenis foto bukti yang boleh diunggah perawat. */
+const JENIS_FOTO_PERAWAT = ["ARRIVAL_CONFIRMATION", "SUPPLY_VERIFICATION", "WOUND_BEFORE", "WOUND_AFTER"];
+
+/**
+ * Izin praktik diperiksa di SETIAP langkah yang membawa perawat lebih dekat
+ * ke pasien — bukan hanya saat mengambil permintaan.
+ *
+ * Sebelum audit 20 November 2026 pemeriksaannya hanya ada di
+ * MULAI_TINJAUAN. Perawat yang izinnya dicabut, dibekukan, atau SIP-nya
+ * kedaluwarsa SETELAH mengambil kunjungan tetap bisa menawar, berangkat,
+ * dan masuk ke rumah pasien. Mendokumentasikan tindakan yang sudah
+ * terlanjur dikerjakan tetap boleh — rekam medisnya harus lengkap.
+ */
+async function izinKerjaPerawat(aktor: Aktor): Promise<string | null> {
+  if (aktor.peran !== "PROVIDER") return null;
+  const cek = bolehMenerimaKunjungan(await perawatDariAktor(aktor));
+  return cek.boleh
+    ? null
+    : `Izin praktik Anda sedang tidak berlaku (${cek.alasan}) Kunjungan ini tidak bisa dilanjutkan; admin akan mengalihkannya.`;
+}
+
+/**
+ * Memindahkan status HANYA kalau statusnya masih seperti yang dibaca.
+ *
+ * Tanpa syarat ini, dua permintaan yang tiba bersamaan sama-sama lolos
+ * pemeriksaan lalu sama-sama menulis: dua perawat sama-sama "mengambil"
+ * satu permintaan, atau pembatalan menimpa pembayaran yang baru masuk.
+ * Mengembalikan null bila yang lain sudah lebih dulu.
+ */
+async function pindahStatus(id: number, dari: string, nilai: Partial<typeof bookings.$inferInsert>) {
+  const [baris] = await db
+    .update(bookings)
+    .set(nilai)
+    .where(and(eq(bookings.id, id), eq(bookings.status, dari)))
+    .returning();
+  return baris ?? null;
+}
+
+const sudahBerubah = (pesan = "Pemesanan ini baru saja diubah orang lain. Muat ulang halamannya.") =>
+  NextResponse.json({ error: pesan }, { status: 409 });
 
 /**
  * Data untuk layar.
@@ -166,7 +209,18 @@ export async function POST(req: NextRequest) {
       // Tanda bahaya tidak boleh berubah jadi kunjungan rumah, sekuat apa
       // pun permintaannya. Wizard sudah menahannya di layar; di sini
       // ditahan lagi, karena layar bisa dilewati dan API tidak bisa.
-      if (triageRedFlag) {
+      /**
+       * Dihitung ulang dari isi pengkajian, bukan hanya dipercaya dari
+       * `triageRedFlag`. Sebelum audit 20 November 2026 server hanya
+       * membaca penanda yang dikirim browser: permintaan berisi "demam"
+       * dan "perdarahan hebat" lolos jadi kunjungan rumah asal penandanya
+       * dikirim `false`.
+       */
+      const kaji = woundAssessment ?? {};
+      const bahayaDariIsi =
+        kaji.fever === true ||
+        /severe|hebat|menyembur|tidak berhenti/i.test(String(kaji.bleeding ?? ""));
+      if (triageRedFlag || bahayaDariIsi) {
         return NextResponse.json(
           {
             error:
@@ -406,16 +460,13 @@ export async function POST(req: NextRequest) {
         );
       }
 
-      const [hasil] = await db
-        .update(bookings)
-        .set({
-          status: S.DITINJAU,
-          reviewStartedAt: new Date(),
-          providerId: Number(actorProviderId) || null,
-          providerName: actorProviderName || null,
-        })
-        .where(eq(bookings.id, Number(bookingId)))
-        .returning();
+      const hasil = await pindahStatus(pesanan.id, pesanan.status, {
+        status: S.DITINJAU,
+        reviewStartedAt: new Date(),
+        providerId: Number(actorProviderId) || null,
+        providerName: actorProviderName || null,
+      });
+      if (!hasil) return sudahBerubah("Permintaan ini baru saja diambil perawat lain.");
 
       await db.insert(auditLogs).values({
         userId: null,
@@ -453,6 +504,9 @@ export async function POST(req: NextRequest) {
       const izin = bolehPindah(pesanan.status, S.DITAWARKAN, actorRole ?? "PROVIDER");
       if (!izin.boleh) return NextResponse.json({ error: izin.alasan }, { status: 409 });
 
+      const tanpaIzin = await izinKerjaPerawat(aktor);
+      if (tanpaIzin) return NextResponse.json({ error: tanpaIzin }, { status: 403 });
+
       const daftar: ItemPenawaran[] = Array.isArray(item) ? item : [];
       // Aturan yang sama dipakai di layar dan di sini. Layar bisa dilewati.
       const halangan = penghalangKirimPenawaran(
@@ -486,9 +540,7 @@ export async function POST(req: NextRequest) {
         }))
       );
 
-      const [hasil] = await db
-        .update(bookings)
-        .set({
+      const hasil = await pindahStatus(pesanan.id, pesanan.status, {
           status: S.DITAWARKAN,
           quotedAt: new Date(),
           quotedByProviderId: Number(actorProviderId) || null,
@@ -502,9 +554,8 @@ export async function POST(req: NextRequest) {
           distanceFeeIdr: honor.jarak,
           emergencyFeeIdr: honor.luarJam,
           totalPriceIdr: total,
-        })
-        .where(eq(bookings.id, Number(bookingId)))
-        .returning();
+        });
+      if (!hasil) return sudahBerubah();
 
       await db.insert(notifications).values({
         userId: pesanan.patientId,
@@ -554,19 +605,16 @@ export async function POST(req: NextRequest) {
         if (pesanan.quotedByProviderId != null)
           daftarTolak.add(String(pesanan.quotedByProviderId));
 
-        const [hasil] = await db
-          .update(bookings)
-          .set({
-            status: S.DITOLAK_PASIEN,
-            rejectionReason: alasanTolak || null,
-            rejectedProviderIds: [...daftarTolak].join(","),
-            providerId: null,
-            providerName: null,
-            quotedByProviderId: null,
-            quotedByProviderName: null,
-          })
-          .where(eq(bookings.id, Number(bookingId)))
-          .returning();
+        const hasil = await pindahStatus(pesanan.id, pesanan.status, {
+          status: S.DITOLAK_PASIEN,
+          rejectionReason: alasanTolak || null,
+          rejectedProviderIds: [...daftarTolak].join(","),
+          providerId: null,
+          providerName: null,
+          quotedByProviderId: null,
+          quotedByProviderName: null,
+        });
+        if (!hasil) return sudahBerubah();
 
         await db.insert(auditLogs).values({
           userId: Number(actorUserId) || null,
@@ -632,6 +680,19 @@ export async function POST(req: NextRequest) {
         alamat: pesanan.addressText,
       });
 
+      /**
+       * Status dipindahkan LEBIH DULU, bersyarat. Kalau "Setuju" tertekan
+       * dua kali, yang kedua berhenti di sini — sebelumnya ia sempat
+       * menyimpan persetujuan kedua sebelum ditolak.
+       */
+      const hasil = await pindahStatus(pesanan.id, pesanan.status, {
+        status: S.DISETUJUI,
+        approvedAt: new Date(),
+        approvedByName: String(namaTandaTangan).trim(),
+        totalPriceIdr: total,
+      });
+      if (!hasil) return sudahBerubah();
+
       await db.insert(consents).values({
         bookingId: Number(bookingId),
         version: VERSI_CONSENT,
@@ -657,17 +718,6 @@ export async function POST(req: NextRequest) {
           .set({ consentGiven: true })
           .where(eq(circumcisionAssessments.bookingId, Number(bookingId)));
       }
-
-      const [hasil] = await db
-        .update(bookings)
-        .set({
-          status: S.DISETUJUI,
-          approvedAt: new Date(),
-          approvedByName: String(namaTandaTangan).trim(),
-          totalPriceIdr: total,
-        })
-        .where(eq(bookings.id, Number(bookingId)))
-        .returning();
 
       await db.insert(auditLogs).values({
         userId: Number(actorUserId) || null,
@@ -757,6 +807,11 @@ export async function POST(req: NextRequest) {
         ? await db.select().from(providers).where(eq(providers.id, Number(actorProviderId)))
         : [];
 
+      // Bersyarat dan lebih dulu: tombol tanda tangan yang tertekan dua kali
+      // tidak boleh menghasilkan dua laporan bertanda tangan.
+      const hasil = await pindahStatus(pesanan.id, pesanan.status, { status: S.SELESAI });
+      if (!hasil) return sudahBerubah();
+
       const [laporan] = await db
         .insert(visitReports)
         .values({
@@ -773,12 +828,6 @@ export async function POST(req: NextRequest) {
           nextVisitSuggestion: nextVisitSuggestion || null,
           suppliesUsed: suppliesUsed || null,
         })
-        .returning();
-
-      const [hasil] = await db
-        .update(bookings)
-        .set({ status: S.SELESAI })
-        .where(eq(bookings.id, Number(bookingId)))
         .returning();
 
       await db.insert(notifications).values({
@@ -844,11 +893,41 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: izin.alasan }, { status: 409 });
       }
 
-      const [updated] = await db
-        .update(bookings)
-        .set({ status })
-        .where(eq(bookings.id, Number(bookingId)))
-        .returning();
+      /**
+       * Tiga perpindahan yang punya jalannya sendiri, dan TIDAK boleh lewat
+       * sini (audit 20 November 2026):
+       *
+       *   - TIBA hanya lewat foto kedatangan. Layar memang begitu, tapi API
+       *     menerimanya tanpa foto — "sudah tiba" tanpa bukti apa pun.
+       *   - DIBAYAR hanya dari kabar pembayaran. Admin yang menandainya di
+       *     sini membuat perawat berangkat tanpa uang yang masuk, dan honor
+       *     perawatnya tidak pernah tercatat (bagi hasil menunggu LUNAS).
+       *   - DIBATALKAN lewat CANCEL_BOOKING, yang memberi tahu perawat dan
+       *     meminta pengembalian dana bila sudah dibayar.
+       */
+      if (status === S.PERAWAT_TIBA)
+        return NextResponse.json(
+          { error: "Tandai sudah tiba dengan mengirim foto kedatangan." },
+          { status: 409 }
+        );
+      if (status === S.DIBAYAR)
+        return NextResponse.json(
+          { error: "Status dibayar hanya berasal dari kabar pembayaran Midtrans." },
+          { status: 409 }
+        );
+      if (status === S.DIBATALKAN)
+        return NextResponse.json(
+          { error: "Pembatalan memakai aksi CANCEL_BOOKING." },
+          { status: 409 }
+        );
+
+      if (status === S.PERAWAT_BERANGKAT || status === S.DIKERJAKAN) {
+        const tanpaIzin = await izinKerjaPerawat(aktor);
+        if (tanpaIzin) return NextResponse.json({ error: tanpaIzin }, { status: 403 });
+      }
+
+      const updated = await pindahStatus(sebelum.id, sebelum.status, { status });
+      if (!updated) return sudahBerubah();
 
       await db.insert(notifications).values({
         userId: sebelum.patientId,
@@ -900,11 +979,19 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: cek.alasan }, { status: 409 });
       }
 
-      const [dibatalkan] = await db
-        .update(bookings)
-        .set({ status: S.DIBATALKAN, triageNotes: reason ? `Dibatalkan pasien: ${reason}` : pesanan.triageNotes })
-        .where(eq(bookings.id, Number(bookingId)))
-        .returning();
+      /**
+       * Bersyarat: kabar lunas bisa tiba di detik yang sama. Siapa pun yang
+       * kalah tahu ia kalah — pembatalan ini menjawab 409, atau kabar
+       * lunasnya diperlakukan sebagai uang yang masuk setelah batal.
+       */
+      const dibatalkan = await pindahStatus(pesanan.id, pesanan.status, {
+        status: S.DIBATALKAN,
+        triageNotes: reason ? `Dibatalkan ${actorRole === "ADMIN" ? "admin" : "pasien"}: ${reason}` : pesanan.triageNotes,
+      });
+      if (!dibatalkan) return sudahBerubah();
+
+      // Perawat diberi tahu; uang yang sudah masuk diminta dikembalikan.
+      await setelahDibatalkan(dibatalkan, actorRole === "ADMIN" ? "oleh admin" : "oleh pasien");
 
       await db.insert(auditLogs).values({
         userId: Number(actorUserId) || null,
@@ -1315,6 +1402,41 @@ export async function POST(req: NextRequest) {
         );
       }
 
+      /**
+       * Foto bukti hanya pada saat yang masuk akal (audit 20 November 2026).
+       *
+       * Sebelumnya perawat bisa mengunggah "foto luka sebelum tindakan"
+       * sebelum berangkat, jenis foto karangan apa pun, dan — yang paling
+       * penting — menambah foto bukti SETELAH laporan ditandatangani.
+       * Foto sebelum/sesudah adalah bukti yang dipakai saat ada sengketa;
+       * bukti yang masih bisa ditambah setelah perkaranya muncul bukan
+       * bukti.
+       */
+      if (!olehPasien) {
+        if (!JENIS_FOTO_PERAWAT.includes(String(photoType)))
+          return NextResponse.json({ error: "Jenis foto tidak dikenal." }, { status: 400 });
+
+        const bolehPada =
+          photoType === "ARRIVAL_CONFIRMATION"
+            ? [S.PERAWAT_BERANGKAT, S.PERAWAT_TIBA, S.DIKERJAKAN]
+            : [S.PERAWAT_TIBA, S.DIKERJAKAN];
+        if (!(bolehPada as string[]).includes(pesanan.status))
+          return NextResponse.json(
+            {
+              error:
+                pesanan.status === S.SELESAI || pesanan.status === S.DIBATALKAN
+                  ? "Kunjungan sudah ditutup — foto bukti tidak bisa ditambahkan lagi."
+                  : "Foto bukti diunggah saat Anda sudah di rumah pasien.",
+            },
+            { status: 409 }
+          );
+
+        if (photoType === "ARRIVAL_CONFIRMATION") {
+          const tanpaIzin = await izinKerjaPerawat(aktor);
+          if (tanpaIzin) return NextResponse.json({ error: tanpaIzin }, { status: 403 });
+        }
+      }
+
       if (!imageUrl)
         return NextResponse.json({ error: "Tidak ada berkas gambar." }, { status: 400 });
 
@@ -1336,12 +1458,7 @@ export async function POST(req: NextRequest) {
       // aturan perpindahan yang sama, bukan menulis status begitu saja.
       if (photoType === "ARRIVAL_CONFIRMATION") {
         const izin = bolehPindah(pesanan.status, S.PERAWAT_TIBA, "PROVIDER");
-        if (izin.boleh) {
-          await db
-            .update(bookings)
-            .set({ status: S.PERAWAT_TIBA })
-            .where(eq(bookings.id, Number(bookingId)));
-
+        if (izin.boleh && (await pindahStatus(pesanan.id, pesanan.status, { status: S.PERAWAT_TIBA }))) {
           await db.insert(notifications).values({
             userId: pesanan.patientId,
             title: `Perawat sudah tiba — ${pesanan.bookingCode}`,
@@ -2014,6 +2131,32 @@ export async function POST(req: NextRequest) {
        */
       if (keputusan === "DIBEKUKAN") await cabutSemuaSesi(perawat.userId, "DIBEKUKAN");
 
+      /**
+       * Kunjungan yang sedang dipegang perawat ini tidak boleh terlupakan.
+       * Ia tidak bisa lagi menawar atau berangkat (izinKerjaPerawat), jadi
+       * kunjungan-kunjungan itu berhenti — admin perlu tahu yang mana saja
+       * supaya bisa mengalihkannya dan mengabari pasiennya.
+       */
+      if (!lulus) {
+        const terbuka = await db
+          .select()
+          .from(bookings)
+          .where(
+            and(
+              eq(bookings.providerId, perawat.id),
+              inArray(bookings.status, [S.DITINJAU, S.DITAWARKAN, S.DISETUJUI, S.DIBAYAR, S.PERAWAT_BERANGKAT])
+            )
+          );
+        if (terbuka.length)
+          await beritahuSemuaAdmin(
+            `Kunjungan perlu dialihkan — ${perawat.fullName}`,
+            `${perawat.fullName} tidak lagi boleh bekerja (${keputusan}). Kunjungan yang ia pegang: ${terbuka
+              .map((b) => `${b.bookingCode} (${namaStatus(b.status)}, ${b.scheduledDate})`)
+              .join("; ")}.`,
+            "VERIFIKASI"
+          );
+      }
+
       await db.insert(auditLogs).values({
         userId: aktor.userId,
         userRole: "ADMIN",
@@ -2026,6 +2169,56 @@ export async function POST(req: NextRequest) {
       });
 
       return NextResponse.json({ success: true, provider: hasil });
+    }
+
+    /* ================================================================ */
+    /*  KESELAMATAN PERAWAT                                             */
+    /* ================================================================ */
+
+    /**
+     * Perawat meminta bantuan dari rumah pasien.
+     *
+     * Perawat bekerja sendirian di rumah orang yang belum pernah ia temui.
+     * Sebelum audit 20 November 2026 tidak ada satu pun cara meminta
+     * bantuan dari aplikasi. Yang diberi tahu ADMIN — lewat aplikasi dan
+     * kotak keluar WhatsApp — lengkap dengan alamat, supaya ada yang bisa
+     * datang atau menelepon. Pasien sengaja TIDAK diberi tahu: bisa jadi
+     * justru dari dalam rumah itulah bahayanya.
+     */
+    if (action === "MINTA_BANTUAN") {
+      const { bookingId, catatan } = body;
+
+      const [pesanan] = await db.select().from(bookings).where(eq(bookings.id, Number(bookingId)));
+      if (!pesanan) return NextResponse.json({ error: "Kunjungan tidak ditemukan." }, { status: 404 });
+      if (aktor.peran !== "PROVIDER" || !pesananDipegangPerawat(aktor, pesanan))
+        return NextResponse.json({ error: "Hanya perawat yang sedang menangani kunjungan ini." }, { status: 403 });
+      if (![S.PERAWAT_BERANGKAT, S.PERAWAT_TIBA, S.DIKERJAKAN].includes(pesanan.status as any))
+        return NextResponse.json({ error: "Kunjungan ini tidak sedang berjalan." }, { status: 409 });
+
+      const [akun] = await db.select().from(users).where(eq(users.id, aktor.userId!));
+      const isiCatatan = String(catatan ?? "").trim().slice(0, 500);
+      await beritahuSemuaAdmin(
+        `PERAWAT MINTA BANTUAN — ${pesanan.bookingCode}`,
+        `${actorNama ?? "Perawat"}${akun?.phone ? ` (${akun.phone})` : ""} meminta bantuan di ${pesanan.addressText} (${namaStatus(pesanan.status)}).${
+          isiCatatan ? ` Catatan: ${isiCatatan}.` : ""
+        } Telepon perawatnya sekarang; bila tidak menjawab, hubungi 112.`,
+        "KESELAMATAN",
+        { whatsapp: true }
+      );
+
+      await db.insert(auditLogs).values({
+        userId: aktor.userId,
+        userRole: aktor.peran,
+        action: "PERAWAT_MINTA_BANTUAN",
+        resourceType: "bookings",
+        resourceId: pesanan.bookingCode,
+        details: `${actorNama ?? "Perawat"} meminta bantuan${isiCatatan ? `: ${isiCatatan}` : ""}.`,
+      });
+
+      return NextResponse.json({
+        success: true,
+        pesan: "Admin sudah diberi tahu dan akan menelepon Anda. Kalau Anda dalam bahaya, tinggalkan rumah itu dan telepon 112.",
+      });
     }
 
     return NextResponse.json({ error: "Unknown action" }, { status: 400 });
