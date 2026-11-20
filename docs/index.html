@@ -309,12 +309,14 @@ function assess(p){
   if (grade === 3) R.push(["red", `Moderate infection: ${ery > 2 ? `erythema ${f1(ery)} cm beyond the edge` : "infection reaches tendon or bone"} (IWGDF grade 3).`, "sameday"]);
   if (grade === 2) R.push(["amber", `Mild local infection: ${local} of 5 local signs present (IWGDF grade 2).`, "mild"]);
   if (!infected && sirsN >= 2) R.push(["amber", "Systemic signs without clear local infection: look for another source.", "sirs"]);
+  if (t.pus && !infected) R.push(["amber", "Purulent discharge even without other signs of inflammation: watch as early infection.", "pus"]);
   if (t.necro) R.push(["red", "New necrosis or black tissue in or around the wound.", "necro"]);
   if (t.depth === "bone") R.push([infected ? "red" : "amber", "Wound probes to bone: high suspicion of osteomyelitis.", "bone"]);
   if (t.nopulse) R.push(infected ? ["red", "Infection in a foot without palpable pulses: ischaemia plus infection needs same-day review.", "pad"]
                                  : ["amber", "Foot pulses not palpable: possible peripheral artery disease.", "padonly"]);
   const g = n(t.glu);
-  if (g >= 400) R.push(["red", `Glucose ${g} mg/dL: risk of hyperglycaemic crisis.`, "glu"]);
+  if (g < 70) R.push(["red", `Glucose ${g} mg/dL: hypoglycaemia${g < 54 ? " level 2" : ""}, treat now.`, "hypo"]);
+  else if (g >= 400) R.push(["red", `Glucose ${g} mg/dL: risk of hyperglycaemic crisis.`, "glu"]);
   else if (g > 250) R.push(["amber", `Glucose ${g} mg/dL: poor control slows healing and feeds infection.`, "glu"]);
 
   /* trajectory */
@@ -351,16 +353,20 @@ function project(pts, base){
 function actions(a){
   const keys = new Set(a.R.map(r => r[2])), out = [];
   if (keys.has("ed")) return {main:"Refer to the emergency department now. Arrange transport and call the doctor on duty.",
-    list:["Do not wait for the next scheduled visit.","Send this note and the wound photo with the patient.","Check glucose again before transfer; record time of referral."], next:"Follow up by phone within 6 hours of referral"};
+    list:[...(keys.has("hypo") ? ["Treat hypoglycaemia before transfer: 15 g fast sugar if the patient is awake and can swallow."] : []),"Do not wait for the next scheduled visit.","Send this note and the wound photo with the patient.","Check glucose again before transfer; record time of referral."], next:"Follow up by phone within 6 hours of referral"};
   if (a.tier === "red") {
-    out.push("Same-day review by the diabetic foot team or surgeon.");
+    if (keys.has("hypo")) out.push("Treat hypoglycaemia now: give 15 g fast sugar if the patient is awake and can swallow, recheck after 15 minutes, repeat if still below 70 mg/dL. If drowsy or unable to swallow, call emergency services.",
+      "Tell the doctor today; insulin or glucose-lowering medicine needs review.");
+    if (["sameday","necro","bone","pad","glu"].some(x => keys.has(x))) out.push("Same-day review by the diabetic foot team or surgeon.");
     if (keys.has("pad")) out.push("Request urgent perfusion assessment (ankle-brachial index or toe pressure).");
     if (keys.has("bone")) out.push("Ask the doctor about a foot X-ray to look for osteomyelitis.");
     if (keys.has("necro")) out.push("Do not debride dry necrosis at home until perfusion is known.");
     if (keys.has("glu")) out.push("Report glucose to the doctor; review insulin today.");
+    if (keys.has("pus")) out.push("Tell the doctor about the pus; consider a wound culture after cleansing.");
     return {main:"Same-day medical review. Escalate today; do not wait for the next routine visit.", list:out, next:"Re-assess within 24 hours"};
   }
   if (a.tier === "amber") {
+    if (keys.has("pus")) out.push("Tell the doctor today about the pus; consider a wound culture after cleansing.");
     if (keys.has("mild")) out.push("Inform the doctor today about mild infection; consider a wound culture after cleansing and debridement.");
     if (keys.has("stall") || keys.has("grow")) out.push("Review offloading at home and adherence; consider referral to a diabetic foot clinic.");
     if (keys.has("padonly")) out.push("Request a perfusion check (ankle-brachial index) at the next clinic visit.");

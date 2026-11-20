@@ -23,13 +23,16 @@
  *     Bacterial infection, Area ≥ 1 cm², Depth. Skor 0–6.
  *   - Sheehan dkk., Diabetes Care 2003: pengurangan luas < ~50% dalam
  *     4 minggu memprediksi luka TIDAK sembuh dalam 12 minggu.
+ *   - ADA Standards of Care 2025, bab 6: hipoglikemia = gula < 70 mg/dL
+ *     (level 1), < 54 mg/dL (level 2). Pada pasien dengan insulin atau
+ *     sulfonilurea, keduanya ditangani saat itu juga, bukan esok hari.
  *
  * Berkas ini murni: tidak menyentuh basis data, jaringan, atau waktu
  * sekarang. Yang memanggilnya (API) menyerahkan riwayat dan hari ke-berapa.
  */
 
 /** Naikkan setiap kali ada ambang atau aturan yang berubah. Ikut tersimpan per pengkajian. */
-export const VERSI_ATURAN_WOUNDEX = "2026-11-17b";
+export const VERSI_ATURAN_WOUNDEX = "2026-11-20";
 
 export type Tingkat = "MERAH" | "KUNING" | "HIJAU";
 export type Kedalaman = "KULIT" | "TENDON" | "TULANG";
@@ -247,6 +250,17 @@ export function nilaiWoundex(s: SinyalWoundex, riwayat: TitikLuas[], hariIni: nu
       kunci: "sistemik",
       teks: "Ada tanda sistemik tanpa infeksi lokal yang jelas. Cari sumber lain.",
     });
+  /**
+   * Nanah sendirian hanya 1 dari 5 tanda, jadi belum memenuhi definisi
+   * infeksi IWGDF (≥ 2) dan derajatnya tetap 1. Tapi luka bernanah tidak
+   * boleh berlabel "sesuai rencana": perawat harus mengabarkannya ke dokter.
+   */
+  if (s.nanah && !terinfeksi)
+    alasan.push({
+      tingkat: "KUNING",
+      kunci: "nanah",
+      teks: "Ada nanah walau tanda radang lain belum muncul: awasi sebagai awal infeksi.",
+    });
   if (s.nekrosisBaru)
     alasan.push({ tingkat: "MERAH", kunci: "nekrosis", teks: "Ada jaringan nekrosis atau hitam yang baru muncul." });
   if (s.kedalaman === "TULANG")
@@ -262,7 +276,13 @@ export function nilaiWoundex(s: SinyalWoundex, riwayat: TitikLuas[], hariIni: nu
         : { tingkat: "KUNING", kunci: "iskemia-saja", teks: "Nadi kaki tidak teraba: curiga penyakit arteri perifer." }
     );
   if (s.gulaDarah !== null) {
-    if (s.gulaDarah >= 400)
+    if (s.gulaDarah < 70)
+      alasan.push({
+        tingkat: "MERAH",
+        kunci: "hipo",
+        teks: `Gula darah ${s.gulaDarah} mg/dL: hipoglikemia${s.gulaDarah < 54 ? " level 2" : ""}, tangani sekarang.`,
+      });
+    else if (s.gulaDarah >= 400)
       alasan.push({ tingkat: "MERAH", kunci: "gula", teks: `Gula darah ${s.gulaDarah} mg/dL: risiko krisis hiperglikemia.` });
     else if (s.gulaDarah > 250)
       alasan.push({
@@ -330,6 +350,7 @@ function tindakanDari(t: Tingkat, k: Set<string>): HasilWoundex["tindakan"] {
     return {
       utama: "Rujuk ke IGD sekarang. Atur transportasi dan hubungi dokter jaga.",
       langkah: [
+        ...(k.has("hipo") ? ["Tangani hipoglikemia sebelum berangkat: 15 g gula cepat bila pasien sadar dan bisa menelan."] : []),
         "Jangan menunggu jadwal kunjungan berikutnya.",
         "Bawa catatan kunjungan ini dan foto luka bersama pasien.",
         "Periksa ulang gula darah sebelum berangkat; catat jam rujukan.",
@@ -337,16 +358,26 @@ function tindakanDari(t: Tingkat, k: Set<string>): HasilWoundex["tindakan"] {
       berikutnya: "Hubungi keluarga dalam 6 jam setelah rujukan",
     };
   if (t === "MERAH") {
-    const langkah = ["Tinjauan hari ini oleh tim kaki diabetik atau dokter bedah."];
+    const langkah: string[] = [];
+    if (k.has("hipo"))
+      langkah.push(
+        "Tangani hipoglikemia sekarang: beri 15 g gula cepat bila pasien sadar dan bisa menelan, ukur ulang setelah 15 menit, ulangi bila masih < 70 mg/dL. Bila tidak sadar atau tidak bisa menelan: hubungi IGD.",
+        "Laporkan ke dokter hari ini; dosis insulin atau obat penurun gula perlu ditinjau."
+      );
+    /** Hipoglikemia saja bukan urusan tim kaki; masalah luka yang MERAH, ya. */
+    if (["sedang", "nekrosis", "tulang", "iskemia", "gula"].some((x) => k.has(x)))
+      langkah.push("Tinjauan hari ini oleh tim kaki diabetik atau dokter bedah.");
     if (k.has("iskemia")) langkah.push("Minta penilaian perfusi segera (ABI atau tekanan jari kaki).");
     if (k.has("tulang")) langkah.push("Tanyakan ke dokter perlunya foto rontgen kaki untuk osteomielitis.");
     if (k.has("nekrosis")) langkah.push("Jangan debridemen nekrosis kering di rumah sebelum perfusinya diketahui.");
     if (k.has("gula")) langkah.push("Laporkan gula darah ke dokter; tinjau dosis insulin hari ini.");
+    if (k.has("nanah")) langkah.push("Kabari dokter tentang nanah pada luka; pertimbangkan kultur luka setelah dibersihkan.");
     return { utama: "Tinjauan dokter hari ini. Jangan menunggu kunjungan rutin.", langkah, berikutnya: "Kaji ulang dalam 24 jam" };
   }
   if (t === "KUNING") {
     const langkah: string[] = [];
     if (k.has("ringan")) langkah.push("Kabari dokter hari ini; pertimbangkan kultur luka setelah dibersihkan.");
+    if (k.has("nanah")) langkah.push("Kabari dokter hari ini tentang nanah; pertimbangkan kultur luka setelah dibersihkan.");
     if (k.has("macet") || k.has("membesar"))
       langkah.push("Tinjau offloading dan kepatuhan di rumah; pertimbangkan rujukan ke klinik kaki diabetik.");
     if (k.has("iskemia-saja")) langkah.push("Minta pemeriksaan perfusi (ABI) di kunjungan klinik berikutnya.");
