@@ -71,7 +71,7 @@ export const NADA_VERIFIKASI: Record<StatusVerifikasi, "baik" | "tunggu" | "buru
 /* Berkas yang diminta                                                 */
 /* ------------------------------------------------------------------ */
 
-export type JenisBerkas = "STR" | "SIP" | "KTP" | "IJAZAH";
+export type JenisBerkas = "STR" | "SIP" | "KTP" | "FOTO" | "IJAZAH";
 
 export const BERKAS_DIMINTA: {
   jenis: JenisBerkas;
@@ -97,6 +97,13 @@ export const BERKAS_DIMINTA: {
     label: "KTP",
     wajib: true,
     penjelasan: "Untuk memastikan nama di STR dan SIP memang nama Anda.",
+  },
+  {
+    jenis: "FOTO",
+    label: "Foto wajah terbaru",
+    wajib: true,
+    penjelasan:
+      "Ditunjukkan kepada pasien yang Anda kunjungi, supaya mereka bisa mengenali Anda di depan pintu. Admin mencocokkannya dengan foto KTP. Wajah terlihat jelas, tanpa masker atau kacamata hitam.",
   },
   {
     jenis: "IJAZAH",

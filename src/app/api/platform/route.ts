@@ -22,7 +22,7 @@ import {
   type IzinTayang,
 } from "@/logic/testimoni";
 import { rp } from "@/logic/biaya";
-import { BATAS_FOTO_PERMINTAAN, penghalangFoto } from "@/logic/gambar";
+import { BATAS_FOTO_PERMINTAAN, bacaDataUrl, penghalangFoto } from "@/logic/gambar";
 import { db } from "@/db";
 import {
   services,
@@ -77,11 +77,14 @@ import {
   penghalangPutusVerifikasi,
   type StatusVerifikasi,
 } from "@/logic/verifikasi";
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { catatBagiHasil } from "@/server/bagihasil";
 import { penghalangPembayaranHonor, type StatusBagiHasil } from "@/logic/bagihasil";
 import { setelahDibatalkan } from "@/server/pembatalan";
 import { beritahuSemuaAdmin } from "@/server/pemberitahuan";
+
+/** Berapa kali kode kunjungan boleh salah sebelum terkunci. */
+const BATAS_KODE_SALAH = 5;
 
 /** Jenis foto bukti yang boleh diunggah perawat. */
 const JENIS_FOTO_PERAWAT = ["ARRIVAL_CONFIRMATION", "SUPPLY_VERIFICATION", "WOUND_BEFORE", "WOUND_AFTER"];
@@ -1435,6 +1438,74 @@ export async function POST(req: NextRequest) {
           const tanpaIzin = await izinKerjaPerawat(aktor);
           if (tanpaIzin) return NextResponse.json({ error: tanpaIzin }, { status: 403 });
         }
+
+        /**
+         * Kode kunjungan — saat TIBA saja (foto kedatangan yang diulang
+         * setelahnya tidak perlu kode lagi).
+         *
+         * Lima kali salah mengunci kodenya: 4 angka hanya 10.000
+         * kemungkinan, dan tanpa batas seseorang yang memegang akun perawat
+         * curian bisa menebaknya di depan pintu. Yang terkunci dibuka
+         * admin, setelah ia menelepon pasien dan perawatnya.
+         */
+        if (photoType === "ARRIVAL_CONFIRMATION" && pesanan.status === S.PERAWAT_BERANGKAT) {
+          const kode = String(body?.kodeKunjungan ?? "").replace(/\D/g, "");
+          // Lupa mengisi bukan tebakan — tidak menghabiskan percobaan.
+          if (!kode)
+            return NextResponse.json({ error: "Masukkan kode kunjungan 4 angka dari pasien." }, { status: 403 });
+
+          /**
+           * Jatah percobaan diambil LEBIH DULU, di basis data, dengan syarat
+           * belum habis — baru kodenya dicocokkan. Kalau dibaca dulu lalu
+           * dicocokkan, seribu tebakan yang dikirim bersamaan semuanya
+           * membaca "0 kali salah" dan semuanya sempat dicocokkan.
+           */
+          const [jatah] = await db
+            .update(bookings)
+            .set({ kodeSalah: sql`${bookings.kodeSalah} + 1` })
+            .where(and(eq(bookings.id, pesanan.id), sql`${bookings.kodeSalah} < ${BATAS_KODE_SALAH}`))
+            .returning();
+          if (!jatah)
+            return NextResponse.json(
+              { error: "Kode kunjungan terkunci karena salah 5 kali. Hubungi admin — admin akan menelepon pasien untuk memastikan." },
+              { status: 423 }
+            );
+
+          if (pesanan.kodeKunjungan && kode === pesanan.kodeKunjungan) {
+            // Cocok: jatah yang tadi diambil dikembalikan.
+            await db
+              .update(bookings)
+              .set({ kodeSalah: sql`greatest(${bookings.kodeSalah} - 1, 0)` })
+              .where(eq(bookings.id, pesanan.id));
+          } else {
+            const sisa = BATAS_KODE_SALAH - jatah.kodeSalah;
+            if (sisa <= 0) {
+              await beritahuSemuaAdmin(
+                `Kode kunjungan terkunci — ${pesanan.bookingCode}`,
+                `Kode salah ${BATAS_KODE_SALAH} kali dari akun ${actorNama ?? "perawat"} di ${pesanan.addressText}. Bisa jadi bukan perawat yang ditugaskan. Telepon pasien dan perawatnya sebelum membuka kunci.`,
+                "KESELAMATAN",
+                { whatsapp: true }
+              );
+              await db.insert(auditLogs).values({
+                userId: aktor.userId,
+                userRole: aktor.peran,
+                action: "KODE_KUNJUNGAN_TERKUNCI",
+                resourceType: "bookings",
+                resourceId: pesanan.bookingCode,
+                details: `Kode kunjungan salah ${BATAS_KODE_SALAH} kali oleh ${actorNama ?? "perawat"}.`,
+              });
+            }
+            return NextResponse.json(
+              {
+                error:
+                  sisa > 0
+                    ? `Kode tidak cocok. Minta pasien membacakan kode di aplikasinya. Sisa ${sisa} percobaan.`
+                    : "Kode salah 5 kali dan sekarang terkunci. Admin sudah diberi tahu.",
+              },
+              { status: 403 }
+            );
+          }
+        }
       }
 
       if (!imageUrl)
@@ -1986,13 +2057,38 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: "Akun ini bukan akun perawat." }, { status: 403 });
 
       const daftar: { jenis: string; fileUrl: string }[] = Array.isArray(berkas) ? berkas : [];
+
+      const lama = await db
+        .select()
+        .from(providerDocuments)
+        .where(eq(providerDocuments.providerId, aktor.providerId));
+
+      /**
+       * Berkas yang masih berlaku dari pengajuan sebelumnya ikut dihitung —
+       * sama dengan yang dihitung layar. Sebelumnya server hanya menghitung
+       * berkas yang dikirim kali ini, jadi perawat yang hanya memperpanjang
+       * SIP ditolak dengan "Belum diunggah: KTP" padahal KTP-nya sudah ada.
+       */
       const tolak = penghalangAjuVerifikasi({
         strNumber,
         sipNumber,
         sipBerlakuSampai,
-        berkas: daftar,
+        berkas: [...daftar, ...lama.filter((d) => !d.supersededAt).map((d) => ({ jenis: d.jenis }))],
       });
       if (tolak) return NextResponse.json({ error: tolak }, { status: 400 });
+
+      /**
+       * Foto wajah akan dilihat pasien, jadi harus benar-benar gambar dan
+       * ukurannya wajar — bukan PDF, bukan foto kamera 5 MB.
+       */
+      const fotoBaru = daftar.find((b) => b.jenis === "FOTO");
+      if (fotoBaru) {
+        const bacaan = bacaDataUrl(String(fotoBaru.fileUrl));
+        if (!bacaan.sah || !bacaan.jenis.startsWith("image/"))
+          return NextResponse.json({ error: "Foto wajah harus berupa gambar (JPG atau PNG)." }, { status: 400 });
+        const halanganFotoWajah = penghalangFoto([fotoBaru.fileUrl], 1);
+        if (halanganFotoWajah) return NextResponse.json({ error: halanganFotoWajah }, { status: 413 });
+      }
 
       /**
        * Dokumen lama ditandai DIGANTI, bukan dihapus.
@@ -2001,10 +2097,6 @@ export async function POST(req: NextRequest) {
        * kunjungan itu", yang menjawab adalah riwayat ini. Menghapus SIP
        * lama saat SIP baru diunggah menghapus jawabannya.
        */
-      const lama = await db
-        .select()
-        .from(providerDocuments)
-        .where(eq(providerDocuments.providerId, aktor.providerId));
       for (const d of lama) {
         if (!d.supersededAt && daftar.some((b) => b.jenis === d.jenis))
           await db
@@ -2089,9 +2181,28 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: "Perawat tidak ditemukan." }, { status: 404 });
 
       const lulus = keputusan === "TERVERIFIKASI";
+
+      /**
+       * Foto wajah baru tampil ke pasien setelah admin MENYATAKAN sudah
+       * mencocokkannya dengan foto KTP. Tanpa itu, foto hanyalah gambar
+       * yang dipilih sendiri oleh pemegang akun — tidak membuktikan apa pun
+       * tentang siapa yang akan berdiri di depan pintu.
+       */
+      const [fotoWajah] = (
+        await db.select().from(providerDocuments).where(eq(providerDocuments.providerId, perawat.id))
+      )
+        .filter((d) => d.jenis === "FOTO" && !d.supersededAt)
+        .sort((a, b) => new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime());
+      if (lulus && fotoWajah && body?.fotoCocok !== true)
+        return NextResponse.json(
+          { error: "Centang dulu bahwa wajah di foto sudah Anda cocokkan dengan foto KTP." },
+          { status: 400 }
+        );
+
       const [hasil] = await db
         .update(providers)
         .set({
+          ...(lulus && fotoWajah ? { avatarUrl: fotoWajah.fileUrl } : {}),
           verifiedStatus: String(keputusan),
           verifiedAt: lulus ? new Date() : null,
           verifiedByName: lulus ? actorNama : null,
@@ -2169,6 +2280,37 @@ export async function POST(req: NextRequest) {
       });
 
       return NextResponse.json({ success: true, provider: hasil });
+    }
+
+    /**
+     * Admin membuka kode kunjungan yang terkunci — setelah menelepon pasien
+     * dan perawatnya. Alasannya wajib, karena yang dibuka adalah pintu
+     * rumah seseorang.
+     */
+    if (action === "BUKA_KUNCI_KODE") {
+      const halangan = harusAdmin(aktor);
+      if (halangan) return NextResponse.json({ error: halangan }, { status: 403 });
+      const { bookingId, alasan } = body;
+      if (String(alasan ?? "").trim().length < 10)
+        return NextResponse.json(
+          { error: "Tulis apa yang sudah dipastikan (minimal 10 karakter), mis. 'pasien dan perawat sudah ditelepon'." },
+          { status: 400 }
+        );
+      const [hasil] = await db
+        .update(bookings)
+        .set({ kodeSalah: 0 })
+        .where(eq(bookings.id, Number(bookingId)))
+        .returning();
+      if (!hasil) return NextResponse.json({ error: "Kunjungan tidak ditemukan." }, { status: 404 });
+      await db.insert(auditLogs).values({
+        userId: aktor.userId,
+        userRole: "ADMIN",
+        action: "KODE_KUNJUNGAN_DIBUKA",
+        resourceType: "bookings",
+        resourceId: hasil.bookingCode,
+        details: `Kunci kode dibuka ${actorNama ?? "admin"}: ${String(alasan).trim()}`,
+      });
+      return NextResponse.json({ success: true });
     }
 
     /* ================================================================ */

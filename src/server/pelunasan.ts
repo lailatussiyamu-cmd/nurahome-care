@@ -22,6 +22,7 @@
  *      yang kalah tahu ia kalah.
  */
 
+import { randomInt } from "node:crypto";
 import { and, eq, ne } from "drizzle-orm";
 import { db } from "@/db";
 import { bookings, payments } from "@/db/schema";
@@ -31,6 +32,11 @@ import { catatBagiHasil } from "@/server/bagihasil";
 import { beritahuPengguna, beritahuSemuaAdmin } from "@/server/pemberitahuan";
 
 export type HasilPelunasan = "DIBAYAR" | "SUDAH_BERJALAN" | "BATAL" | "GANDA" | "TIDAK_ADA";
+
+/** 4 angka dari sumber acak kriptografis — bukan Math.random yang bisa ditebak. */
+export function buatKodeKunjungan(): string {
+  return String(randomInt(0, 10000)).padStart(4, "0");
+}
 
 export async function terapkanLunas(a: {
   bayar: { id: number; bookingId: number; orderId: string; amountIdr: number };
@@ -69,7 +75,14 @@ export async function terapkanLunas(a: {
   /* ---- normal: hanya kalau MASIH menunggu pembayaran ---- */
   const [dimajukan] = await db
     .update(bookings)
-    .set({ status: S.DIBAYAR, paymentStatus: "LUNAS", paymentMethod: a.metode })
+    .set({
+      status: S.DIBAYAR,
+      paymentStatus: "LUNAS",
+      paymentMethod: a.metode,
+      // Kode di depan pintu — lahir bersama kepastian bahwa kunjungannya terjadi.
+      kodeKunjungan: buatKodeKunjungan(),
+      kodeSalah: 0,
+    })
     .where(and(eq(bookings.id, bayar.bookingId), eq(bookings.status, S.DISETUJUI)))
     .returning();
 

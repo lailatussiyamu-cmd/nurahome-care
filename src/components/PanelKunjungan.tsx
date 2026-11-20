@@ -54,6 +54,9 @@ export function PanelKunjungan({ booking, foto, sesi, onSelesai }: Props) {
   const [kunjunganBerikut, setKunjunganBerikut] = useState("");
   const [bahanTerpakai, setBahanTerpakai] = useState("");
 
+  /** Kode kunjungan yang dibacakan pasien di depan pintu. */
+  const [kode, setKode] = useState("");
+
   // Minta bantuan: dibuka dulu (satu ketukan tidak langsung mengirim),
   // lalu dikirim. Jawabannya ditampilkan apa adanya.
   const [bantuanTerbuka, setBantuanTerbuka] = useState(false);
@@ -147,6 +150,8 @@ export function PanelKunjungan({ booking, foto, sesi, onSelesai }: Props) {
       photoType: jenis,
       imageUrl: dataUrl,
       caption: LABEL_FOTO[jenis],
+      // Hanya dipakai server saat tiba; diabaikan untuk foto lain.
+      ...(jenis === "ARRIVAL_CONFIRMATION" ? { kodeKunjungan: kode } : {}),
     });
   };
 
@@ -230,14 +235,56 @@ export function PanelKunjungan({ booking, foto, sesi, onSelesai }: Props) {
           sekaligus memberi keluarga tanda yang bisa mereka lihat. */}
       {booking.status === S.PERAWAT_BERANGKAT && (
         <div className="space-y-2">
-          <p className="text-sm text-nh-kabut leading-relaxed">
-            Sudah sampai? Foto pintu masuk rumah pasien. Fotonya langsung
-            muncul di layar keluarga sebagai tanda Anda tiba.
-          </p>
-          <label className="nh-tombol w-full px-5 py-3.5 text-sm flex items-center justify-center gap-2 cursor-pointer">
-            <MapPin className="w-4 h-4" /> Foto & konfirmasi tiba
-            <input type="file" accept="image/*" capture="environment" className="hidden" onChange={unggah("ARRIVAL_CONFIRMATION")} />
-          </label>
+          {booking.kodeTerkunci ? (
+            <p className="text-sm text-nh-bahaya leading-relaxed">
+              Kode kunjungan terkunci karena salah 5 kali. Admin sudah diberi tahu
+              dan akan menelepon pasien serta Anda sebelum membukanya.
+            </p>
+          ) : (
+            <>
+              <p className="text-sm text-nh-kabut leading-relaxed">
+                Sudah sampai? Perkenalkan diri, lalu minta pasien atau keluarganya
+                <b className="text-nh-putih"> membacakan kode kunjungan</b> dari aplikasinya.
+                Kode itu tidak ada di layar Anda.
+              </p>
+              <input
+                inputMode="numeric"
+                autoComplete="off"
+                maxLength={4}
+                value={kode}
+                onChange={(e) => setKode(e.target.value.replace(/\D/g, "").slice(0, 4))}
+                placeholder="Kode 4 angka"
+                aria-label="Kode kunjungan dari pasien"
+                className="nh-isian w-full px-3 py-3 text-center font-mono text-2xl tracking-[0.4em] placeholder:font-sans placeholder:text-base placeholder:tracking-normal"
+              />
+              {/* Tepat di bawah kodenya — "kode tidak cocok" yang muncul di
+                  ujung bawah panel tidak terbaca orang yang sedang berdiri
+                  di depan pintu. */}
+              {galat && (
+                <p className="text-xs text-nh-bahaya leading-relaxed" role="alert">
+                  {galat}
+                </p>
+              )}
+              <label
+                className={`nh-tombol w-full px-5 py-3.5 text-sm flex items-center justify-center gap-2 ${
+                  kode.length === 4 && !sibuk ? "cursor-pointer" : "opacity-50 pointer-events-none"
+                }`}
+              >
+                <MapPin className="w-4 h-4" /> Foto pintu & konfirmasi tiba
+                <input
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  className="hidden"
+                  disabled={kode.length !== 4 || sibuk}
+                  onChange={unggah("ARRIVAL_CONFIRMATION")}
+                />
+              </label>
+              <p className="text-[11px] text-nh-kabut-2 leading-relaxed">
+                Fotonya langsung muncul di layar keluarga sebagai tanda Anda tiba.
+              </p>
+            </>
+          )}
         </div>
       )}
 
@@ -440,7 +487,7 @@ export function PanelKunjungan({ booking, foto, sesi, onSelesai }: Props) {
       {/* Saat DIKERJAKAN galatnya sudah tampil di kotak laporan di atas.
           Di status lain — termasuk foto tiba yang ditolak — tadinya tidak
           tampil sama sekali, dan perawat hanya melihat tidak terjadi apa-apa. */}
-      {galat && booking.status !== S.DIKERJAKAN && (
+      {galat && booking.status !== S.DIKERJAKAN && !(booking.status === S.PERAWAT_BERANGKAT && !booking.kodeTerkunci) && (
         <p className="text-xs text-nh-bahaya">{galat}</p>
       )}
     </div>

@@ -7,6 +7,7 @@ import { PanelTestimoniAdmin } from "./PanelTestimoniAdmin";
 import { PanelVerifikasiAdmin } from "./PanelVerifikasiAdmin";
 import { PanelBagiHasilAdmin } from "./PanelBagiHasilAdmin";
 import { PanelWoundexAdmin } from "./PanelWoundexAdmin";
+import { PanelKodeTerkunci } from "./PanelKodeTerkunci";
 import { rp } from "@/logic/biaya";
 import {
   Sparkles,
@@ -190,6 +191,8 @@ export function AdminPortal({
           </table>
         </div>
       </div>
+
+      <PanelKodeTerkunci bookings={bookings} onSelesai={onRefresh} />
 
       <PanelVerifikasiAdmin
         providers={providers}

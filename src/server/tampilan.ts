@@ -90,7 +90,12 @@ function kartuPerawat(p: any) {
     completedVisits: p.completedVisits,
     availableHours: p.availableHours,
     isAvailableNow: p.isAvailableNow && bolehMenerimaKunjungan(p).boleh,
-    avatarUrl: p.avatarUrl,
+    /**
+     * Fotonya sendiri TIDAK ikut di sini — kartu ini dikirim ke setiap
+     * pengunjung. Wajah perawat hanya untuk pasien yang memang akan
+     * dikunjunginya, lewat /api/foto-perawat yang memeriksa hal itu.
+     */
+    adaFoto: Boolean(p.avatarUrl),
     verifiedStatus: p.verifiedStatus,
     terverifikasi: v.terverifikasi,
     labelVerifikasi: v.label,
@@ -344,6 +349,16 @@ export async function susunTampilan(a: Aktor) {
     milik = semuaPesanan.filter((b) => b.patientId === a.userId);
   } else {
     milik = semuaPesanan.filter((b) => b.providerId === a.providerId);
+    /**
+     * Perawat yang izinnya sedang tidak berlaku (dibekukan, perlu
+     * perbaikan, SIP habis) tidak lagi melihat kunjungan yang BELUM ia
+     * kerjakan — nama, alamat, dan foto luka pasien yang akan dialihkan
+     * admin ke perawat lain. Yang sedang atau sudah ia kerjakan tetap
+     * terlihat, supaya catatan klinisnya bisa diselesaikan.
+     */
+    const sayaPerawat = semuaPerawat.find((p) => p.id === a.providerId);
+    if (!bolehMenerimaKunjungan(sayaPerawat).boleh)
+      milik = milik.filter((b) => [S.PERAWAT_TIBA, S.DIKERJAKAN, S.SELESAI].includes(b.status as any));
   }
 
   /**
@@ -372,7 +387,16 @@ export async function susunTampilan(a: Aktor) {
     }
   }
 
-  const pesananTampil = [...milik, ...antrean];
+  /**
+   * Kode kunjungan hanya untuk PASIEN. Perawat yang bisa membaca kodenya
+   * dari layarnya sendiri membuat kode itu tidak membuktikan apa-apa.
+   */
+  const tanpaKode = (b: any) => {
+    const { kodeKunjungan, kodeSalah, ...sisa } = b;
+    void kodeKunjungan;
+    return { ...sisa, kodeTerkunci: Number(kodeSalah ?? 0) >= 5 };
+  };
+  const pesananTampil = a.peran === "PATIENT" ? milik : [...milik, ...antrean].map(tanpaKode);
   const idMilik = milik.map((b) => b.id);
   const idSemua = pesananTampil.map((b) => b.id);
 

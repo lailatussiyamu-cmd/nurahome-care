@@ -237,6 +237,14 @@ export async function siapkanPemesanan(sampai = TAHAP.DISETUJUI) {
   return { id, kode, pasien, perawat };
 }
 
+/** Kode kunjungan seperti yang dibaca pasien di layarnya. */
+export async function kodeDariPasien(id) {
+  const pasien = await masuk(AKUN.pasien);
+  const b = await lihatPemesanan(pasien, id);
+  assert.ok(b?.kodeKunjungan, "pasien seharusnya melihat kode kunjungan setelah membayar");
+  return b.kodeKunjungan;
+}
+
 /** JPEG kecil untuk foto bukti di tes — isinya tidak penting. */
 export const FOTO_KECIL = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgGBgcGBQgHBwcJ";
 
@@ -251,6 +259,8 @@ export async function majukanKunjungan(perawat, id, sampai = "DIKERJAKAN") {
     "perawat berangkat"
   );
   if (sampai === "PERAWAT_BERANGKAT") return;
+  // Kode kunjungan hanya ada di layar pasien — perawat harus "mendengarnya".
+  const kodeKunjungan = await kodeDariPasien(id);
   diterima(
     await perawat.aksi({
       action: "UPLOAD_TASK_PHOTO",
@@ -258,6 +268,7 @@ export async function majukanKunjungan(perawat, id, sampai = "DIKERJAKAN") {
       photoType: "ARRIVAL_CONFIRMATION",
       imageUrl: FOTO_KECIL,
       caption: "tiba",
+      kodeKunjungan,
     }),
     "foto kedatangan"
   );
