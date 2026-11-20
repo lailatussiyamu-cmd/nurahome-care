@@ -253,18 +253,29 @@ describe("Kabar berulang dan keluar urutan", () => {
    * perilaku yang benar, bukan gangguan.
    */
   test("kabar yang sama tiga kali hanya berakibat sekali", async () => {
-    const { id, pasien, orderId } = await tagihan();
+    const { id, kode, pasien, orderId } = await tagihan();
     await kirimKabar(kabar(orderId));
 
+    /**
+     * Hanya pemberitahuan yang menyebut pesanan INI. Berkas tes lain berjalan
+     * bersamaan (node --test menjalankan berkas secara paralel) dan ikut
+     * menambah pemberitahuan admin — Woundex MERAH, misalnya. Menghitung
+     * semuanya membuat tes ini sesekali merah tanpa ada yang rusak
+     * (pernah: 261 !== 262 di CI, sementara jalannya sebelumnya hijau).
+     */
     const admin = await masuk(AKUN.admin);
-    const sebelum = ((await admin.ambil("/api/platform")).isi.notifications ?? []).length;
+    const milikPesanan = async () =>
+      ((await admin.ambil("/api/platform")).isi.notifications ?? []).filter((n) =>
+        `${n.title} ${n.message}`.includes(kode)
+      ).length;
+    const sebelum = await milikPesanan();
 
     const kedua = await kirimKabar(kabar(orderId));
     const ketiga = await kirimKabar(kabar(orderId));
     assert.equal(kedua.isi.ganda, true, "kiriman kedua harus dikenali sebagai ulangan");
     assert.equal(ketiga.isi.ganda, true, "kiriman ketiga harus dikenali sebagai ulangan");
 
-    const sesudah = ((await admin.ambil("/api/platform")).isi.notifications ?? []).length;
+    const sesudah = await milikPesanan();
     assert.equal(sebelum, sesudah, "kiriman ulang tidak boleh menghasilkan pemberitahuan tambahan");
 
     const b = await lihatPemesanan(pasien, id);
