@@ -30,6 +30,7 @@ import {
   diterima,
   kabar,
   kirimKabar,
+  majukanKunjungan,
   masuk,
   siapkanPemesanan,
   tamu,
@@ -375,8 +376,7 @@ describe("Catatan klinis tidak boleh diisi angka yang tidak ada", () => {
     const { id, kode, pasien, perawat } = await siapkanPemesanan();
     await pasien.kirim("/api/pembayaran", { bookingId: id });
     diterima(await kirimKabar(kabar(`${kode}-1`)), "pembayaran masuk");
-    for (const status of ["PERAWAT_BERANGKAT", "PERAWAT_TIBA", "DIKERJAKAN"])
-      await perawat.aksi({ action: "UPDATE_BOOKING_STATUS", bookingId: id, status });
+    await majukanKunjungan(perawat, id);
     return { id, perawat };
   }
 

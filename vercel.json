@@ -4,6 +4,7 @@
     { "path": "/api/cron?tugas=hapus-foto-kedaluwarsa", "schedule": "10 20 * * *" },
     { "path": "/api/cron?tugas=penawaran-hangus",       "schedule": "5 21 * * *" },
     { "path": "/api/cron?tugas=permintaan-menggantung", "schedule": "15 21 * * *" },
+    { "path": "/api/cron?tugas=cocokkan-pembayaran",    "schedule": "20 21 * * *" },
     { "path": "/api/cron?tugas=belum-dibayar",          "schedule": "25 21 * * *" },
     { "path": "/api/cron?tugas=kunjungan-belum-ditutup","schedule": "35 21 * * *" },
     { "path": "/api/cron?tugas=pengingat-kunjungan",    "schedule": "0 0 * * *" },

@@ -37,7 +37,7 @@ import { serverKey } from "@/server/midtrans";
 import { sidikIp } from "@/logic/otentikasi";
 import { S } from "@/logic/alur";
 import { rp } from "@/logic/biaya";
-import { catatBagiHasil } from "@/server/bagihasil";
+import { terapkanLunas } from "@/server/pelunasan";
 
 export const dynamic = "force-dynamic";
 
@@ -205,50 +205,14 @@ export async function POST(req: NextRequest) {
 
     if (hasil === "LUNAS" && pesanan) {
       /**
-       * Status pemesanan hanya dimajukan kalau ia memang masih menunggu
-       * pembayaran.
-       *
-       * Kabar bisa sampai terlambat — perawatnya mungkin sudah berangkat,
-       * bahkan sudah selesai. Menyetel ulang statusnya ke DIBAYAR akan
-       * memundurkan kunjungan yang sudah berjalan.
+       * Penerapannya di server/pelunasan.ts, dipakai bersama tugas
+       * `cocokkan-pembayaran`. Di sana juga: status hanya dimajukan kalau
+       * masih menunggu pembayaran (kabar bisa terlambat — kunjungannya
+       * mungkin sudah berjalan), uang yang masuk setelah pembatalan atau
+       * masuk dua kali diserahkan ke admin untuk dikembalikan, dan bagi
+       * hasil dicatat bila kunjungannya sudah ditutup lebih dulu.
        */
-      const majukan = pesanan.status === S.DISETUJUI;
-      await db
-        .update(bookings)
-        .set({
-          paymentStatus: "LUNAS",
-          paymentMethod: String(kabar?.payment_type ?? "-"),
-          ...(majukan ? { status: S.DIBAYAR } : {}),
-        })
-        .where(eq(bookings.id, pesanan.id));
-
-      await db.insert(notifications).values({
-        userId: pesanan.patientId,
-        title: "Pembayaran diterima",
-        message: `Pembayaran ${rp(bayar!.amountIdr)} untuk ${pesanan.bookingCode} sudah kami terima. Perawat akan berangkat sesuai jadwal.`,
-        type: "PAYMENT",
-        read: false,
-      });
-
-      /**
-       * Bagi hasil dicatat di sini juga, bukan hanya saat laporan ditutup.
-       *
-       * Sejujurnya: HARI INI baris ini hampir tidak pernah benar-benar
-       * mencatat apa pun. Alur statusnya membuat uang selalu masuk lebih
-       * dulu — perawat baru boleh berangkat setelah pemesanan berstatus
-       * DIBAYAR, dan yang menyetel status itu justru kabar ini. Jadi
-       * ketika kabar sampai, kunjungannya belum ditutup, dan fungsinya
-       * berhenti sendiri.
-       *
-       * Ia tetap dipasang karena urutan itu bisa berubah, dan kalau
-       * berubah, perubahannya tidak akan terlihat seperti masalah bagi
-       * hasil. Jalur "bayar di tempat setelah tindakan" adalah permintaan
-       * yang wajar untuk layanan seperti ini; begitu ada, kunjungan
-       * ditutup lebih dulu dan kabar pembayaran menyusul. Tanpa baris ini,
-       * honor kunjungan-kunjungan itu tidak pernah tercatat — diam-diam,
-       * tanpa galat, dan yang dirugikan perawat yang sudah bekerja.
-       */
-      await catatBagiHasil(pesanan.id, "PEMBAYARAN_MASUK");
+      await terapkanLunas({ bayar: bayar!, metode: String(kabar?.payment_type ?? "-") });
     }
 
     if (hasil === "GAGAL" && pesanan && pesanan.status === S.DISETUJUI) {

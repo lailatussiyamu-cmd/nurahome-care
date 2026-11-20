@@ -58,6 +58,9 @@ import {
 } from "@/logic/tugas";
 import { bacaStatusMidtrans, rupiahBulat } from "@/logic/pembayaran";
 import { midtransSiap, tanyaStatus } from "@/server/midtrans";
+import { terapkanLunas } from "@/server/pelunasan";
+import { setelahDibatalkan } from "@/server/pembatalan";
+import { beritahuSemuaAdmin } from "@/server/pemberitahuan";
 
 export const dynamic = "force-dynamic";
 
@@ -314,13 +317,21 @@ async function belumDibayar(kering: boolean, sekarang: Date): Promise<HasilTugas
 
   for (const b of lewat) {
     if (!kering) {
-      await db
+      /**
+       * Bersyarat: hanya kalau MASIH belum dibayar. Kabar lunas bisa tiba
+       * di detik yang sama; tanpa syarat ini, pembatalan ini menimpa
+       * pemesanan yang baru saja dibayar.
+       */
+      const [batal] = await db
         .update(bookings)
         .set({
           status: S.DIBATALKAN,
           catatanSistem: `Dibatalkan otomatis: tidak dibayar dalam ${TENGGAT.belumDibayarJam} jam.`,
         })
-        .where(eq(bookings.id, b.id));
+        .where(and(eq(bookings.id, b.id), eq(bookings.status, S.DISETUJUI)))
+        .returning();
+      if (!batal) continue;
+      await setelahDibatalkan(batal, "otomatis karena belum dibayar");
 
       await db.insert(notifications).values({
         userId: b.patientId,
@@ -593,27 +604,65 @@ async function cocokkanPembayaran(kering: boolean, sekarang: Date): Promise<Hasi
       .where(eq(payments.id, p.id));
 
     if (hasil === "LUNAS") {
-      const [pesanan] = await db.select().from(bookings).where(eq(bookings.id, p.bookingId));
-      if (pesanan) {
-        await db
-          .update(bookings)
-          .set({
-            paymentStatus: "LUNAS",
-            paymentMethod: String(jawab.kabar.payment_type ?? "-"),
-            ...(pesanan.status === S.DISETUJUI ? { status: S.DIBAYAR } : {}),
-          })
-          .where(eq(bookings.id, pesanan.id));
-        await db.insert(notifications).values({
-          userId: pesanan.patientId,
-          title: "Pembayaran diterima",
-          message: `Pembayaran untuk ${pesanan.bookingCode} sudah kami terima.`,
-          type: "PAYMENT",
-          read: false,
-        });
-      }
+      /** Penjagaan yang sama dengan webhook: batal, ganda, terlambat. */
+      await terapkanLunas({ bayar: p, metode: String(jawab.kabar.payment_type ?? "-") });
     }
   }
 
+  return h;
+}
+
+/* ------------------------------------------------------------------ */
+/* Keselamatan perawat — terlalu lama di rumah pasien tanpa kabar      */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Perawat bekerja sendirian di rumah orang yang belum pernah ia temui.
+ * Tombol "Minta bantuan" hanya menolong perawat yang masih bisa
+ * menekannya. Tugas ini untuk yang tidak bisa.
+ *
+ * Patokannya foto KEDATANGAN — satu-satunya waktu tiba yang tercatat dan
+ * tidak bisa ditulis sembarangan. Yang diberi tahu ADMIN, bukan perawatnya:
+ * yang dibutuhkan di sini adalah orang lain yang menelepon.
+ */
+async function perawatBelumKabar(kering: boolean, sekarang: Date): Promise<HasilTugas> {
+  const h = hasilKosong("perawat-belum-kabar", kering);
+
+  const calon = await db
+    .select()
+    .from(bookings)
+    .where(inArray(bookings.status, [S.PERAWAT_TIBA, S.DIKERJAKAN]));
+  h.diperiksa = calon.length;
+
+  for (const b of calon.slice(0, BATAS_PER_JALAN)) {
+    const [tiba] = await db
+      .select()
+      .from(taskPhotos)
+      .where(and(eq(taskPhotos.bookingId, b.id), eq(taskPhotos.photoType, "ARRIVAL_CONFIRMATION")));
+    if (!tiba) continue;
+    const jam = jamBerlalu(tiba.timestamp, sekarang);
+    if (jam < TENGGAT.perawatDiRumahJam) continue;
+
+    const judul = `Perawat belum kabar — ${b.bookingCode}`;
+    // Diulang paling sering sekali per jam, bukan tiap 30 menit.
+    const sudah = await db.select().from(notifications).where(eq(notifications.title, judul));
+    if (sudah.some((n) => jamBerlalu(n.createdAt, sekarang) < 1)) continue;
+
+    h.dikenai += 1;
+    h.catatan.push(`${b.bookingCode} — ${b.providerName ?? "perawat"} tiba ${Math.round(jam)} jam lalu, belum menutup kunjungan.`);
+    if (kering) continue;
+
+    const [perawat] = b.providerId != null ? await db.select().from(providers).where(eq(providers.id, b.providerId)) : [];
+    const [akun] = perawat?.userId ? await db.select().from(users).where(eq(users.id, perawat.userId)) : [];
+    await beritahuSemuaAdmin(
+      judul,
+      `${b.providerName ?? "Perawat"} tiba di ${b.addressText} ${Math.round(jam)} jam lalu dan belum menutup kunjungan. Telepon perawatnya${akun?.phone ? ` (${akun.phone})` : ""} sekarang; bila tidak bisa dihubungi, hubungi keluarga pasien.`,
+      "KESELAMATAN",
+      { whatsapp: true }
+    );
+  }
+
+  if (!h.dikenai) h.catatan.push("Tidak ada perawat yang terlalu lama tanpa kabar.");
   return h;
 }
 
@@ -635,6 +684,7 @@ const PELAKSANA: Record<NamaTugas, (kering: boolean, sekarang: Date) => Promise<
   "permintaan-menggantung": permintaanMenggantung,
   "belum-dibayar": belumDibayar,
   "kunjungan-belum-ditutup": kunjunganBelumDitutup,
+  "perawat-belum-kabar": perawatBelumKabar,
   "pengingat-kunjungan": pengingatKunjungan,
 };
 

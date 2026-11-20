@@ -24,6 +24,9 @@ CRON_SECRET=ganti-dengan-rahasia-panjang-anda
 # Kunjungan yang laporannya belum ditandatangani perawat
 35 */3 * * *  curl -fsS -H "Authorization: Bearer $CRON_SECRET" "$BASIS/api/cron?tugas=kunjungan-belum-ditutup" >> /var/log/nurahome-cron.log 2>&1
 
+# Keselamatan perawat: kunjungan yang belum ditutup 3 jam setelah perawat tiba dilaporkan ke admin.
+*/30 * * * *  curl -fsS -H "Authorization: Bearer $CRON_SECRET" "$BASIS/api/cron?tugas=perawat-belum-kabar" >> /var/log/nurahome-cron.log 2>&1
+
 # --- harian ---
 # 03:10 WIB — menghapus foto luka yang lewat masa simpan 5 tahun
 10 20 * * *  curl -fsS -H "Authorization: Bearer $CRON_SECRET" "$BASIS/api/cron?tugas=hapus-foto-kedaluwarsa" >> /var/log/nurahome-cron.log 2>&1

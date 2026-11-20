@@ -386,6 +386,42 @@ Semuanya sudah diperbaiki, tapi perlu Anda ketahui karena menunjukkan jenis kesa
 
 ---
 
+## 3b. Audit alur 20 November 2026
+
+Seluruh aksi API dibaca ulang dari sisi tiga orang: pasien, perawat, dan uang.
+Setiap celah di bawah **dibuktikan dulu** ke server yang berjalan (12 tes di
+`skrip/uji/celah.test.mjs` gagal), baru diperbaiki (12 lulus, 161 tes
+seluruhnya lulus).
+
+| Celah | Akibat sebelum diperbaiki | Sekarang |
+|---|---|---|
+| Uang masuk untuk pemesanan yang sudah dibatalkan (tagihan masih terbuka 24 jam) | Pasien diberi tahu "perawat akan berangkat" untuk kunjungan batal; tak seorang pun diminta mengembalikan uangnya | Admin diminta mengembalikan, pasien diberi tahu uangnya kembali, pemesanan dibekukan (sengketa) |
+| Uang masuk dua kali lewat dua nomor pesanan | Keduanya tercatat lunas tanpa ada yang tahu | Pembayaran kedua ditandai perlu ditinjau, admin diminta mengembalikan; honor perawat tidak ikut tertahan |
+| Membatalkan kunjungan yang sudah lunas | Admin tidak tahu harus mengembalikan uang; perawat tidak tahu kunjungannya batal | Admin, pasien, dan perawat diberi tahu — dari pembatalan pasien, admin, maupun otomatis |
+| Pembatalan dan kabar lunas tiba bersamaan | Hasil akhir bergantung siapa yang terakhir menulis | Pemindahan status bersyarat; tepat satu yang menang |
+| Izin perawat dicabut/dibekukan/SIP habis **setelah** mengambil kunjungan | Ia tetap bisa menawar, berangkat, dan masuk ke rumah pasien | Ditolak di setiap langkah menuju pasien; admin diberi daftar kunjungan yang perlu dialihkan |
+| "Sudah tiba" lewat ubah status biasa | Tiba tanpa bukti apa pun (layar memakai foto, API tidak) | Hanya lewat foto kedatangan |
+| Admin menandai "dibayar" lewat ubah status | Perawat berangkat tanpa uang masuk; honornya tidak pernah tercatat | Dibayar hanya dari kabar pembayaran |
+| Foto bukti sebelum berangkat, jenis karangan, atau **setelah laporan ditandatangani** | Bukti sengketa bisa ditambah setelah perkaranya muncul | Jenis dibatasi; hanya saat di rumah pasien; terkunci setelah ditutup |
+| Tanda bahaya hanya dipercaya dari browser | Permintaan berisi demam/perdarahan hebat lolos jadi kunjungan rumah | Dihitung ulang dari isi pengkajian |
+| Dua perawat mengambil permintaan yang sama bersamaan | Keduanya berhasil | Hanya satu |
+| Klik ganda "Setuju" / "Tanda tangani" | Persetujuan atau laporan tersimpan dua kali | Yang kedua ditolak sebelum menyimpan apa pun |
+| Perawat sendirian di rumah orang asing | Tidak ada cara meminta bantuan; tidak ada yang memperhatikan bila ia tak kunjung kabar | Tombol **Saya butuh bantuan** (admin menerima alamat lewat aplikasi + kotak keluar WhatsApp, pasien tidak diberi tahu) dan tugas `perawat-belum-kabar` (3 jam setelah tiba tanpa ditutup → admin diminta menelepon) |
+| `cocokkan-pembayaran` tidak dijadwalkan di Vercel | Pasien yang sudah bayar tapi kabarnya hilang dibatalkan otomatis | Dijadwalkan sebelum `belum-dibayar` |
+
+**Yang perlu diketahui pemasangnya:** `perawat-belum-kabar` perlu berjalan
+tiap 30 menit (`jadwal.crontab`). Vercel paket Hobby hanya mengizinkan cron
+harian, jadi di Vercel tugas ini **tidak** dijadwalkan — pakai crontab server
+atau layanan pemanggil terjadwal dari luar. Pesan WhatsApp ke admin baru
+benar-benar terkirim setelah penyedia WhatsApp dipasang; sampai itu ia
+tercatat di kotak keluar.
+
+**Masih terbuka (bukan celah kode, tapi keputusan):**
+- Pasien belum punya cara memastikan orang di depan pintu adalah perawat yang
+  ditugaskan (mis. kode kunjungan yang dicocokkan, foto perawat di layar).
+- Pengembalian dana masih manual lewat dasbor Midtrans; aplikasi kini
+  memberi tahu kapan harus, tapi belum mencatat bahwa sudah dilakukan.
+
 ## 4. Yang belum dikerjakan
 
 Dikelompokkan menurut **kapan** perlunya, bukan menurut besarnya.
