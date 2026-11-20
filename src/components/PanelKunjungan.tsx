@@ -18,6 +18,7 @@
 import React, { useState } from "react";
 import { S } from "@/logic/alur";
 import { fotoSudahDihapus } from "@/logic/tugas";
+import { kecilkanGambar, penghalangBerkas } from "@/logic/gambar";
 import { Camera, Navigation, MapPin, CheckCircle2, FileText } from "lucide-react";
 
 interface Props {
@@ -83,18 +84,42 @@ export function PanelKunjungan({ booking, foto, sesi, onSelesai }: Props) {
     }
   };
 
-  const unggah = (jenis: JenisFoto) => (e: React.ChangeEvent<HTMLInputElement>) => {
+  /**
+   * Foto DIKECILKAN di ponsel perawat sebelum dikirim, sama seperti foto dari
+   * pasien. Server menolak foto di atas 1,2 MB (lihat logic/gambar.ts), dan
+   * foto kamera ponsel biasa 3–5 MB. Dulu foto dikirim mentah: penolakannya
+   * datang di rumah pasien, dan kunjungan luka tidak bisa ditutup karena
+   * kedua foto luka wajib.
+   */
+  const unggah = (jenis: JenisFoto) => async (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
+    // Dikosongkan supaya foto yang sama bisa dipilih lagi setelah gagal.
+    e.target.value = "";
     if (!f) return;
-    const r = new FileReader();
-    r.onload = () =>
-      panggil({
-        action: "UPLOAD_TASK_PHOTO",
-        photoType: jenis,
-        imageUrl: String(r.result),
-        caption: LABEL_FOTO[jenis],
-      });
-    r.readAsDataURL(f);
+
+    const halangan = penghalangBerkas(f);
+    if (halangan) {
+      setGalat(halangan);
+      return;
+    }
+
+    setSibuk(true);
+    setGalat(null);
+    let dataUrl: string;
+    try {
+      dataUrl = (await kecilkanGambar(f)).dataUrl;
+    } catch (err) {
+      setGalat(err instanceof Error ? err.message : "Foto tidak bisa diolah. Coba foto ulang.");
+      setSibuk(false);
+      return;
+    }
+
+    await panggil({
+      action: "UPLOAD_TASK_PHOTO",
+      photoType: jenis,
+      imageUrl: dataUrl,
+      caption: LABEL_FOTO[jenis],
+    });
   };
 
   const halanganLaporan =
@@ -333,7 +358,10 @@ export function PanelKunjungan({ booking, foto, sesi, onSelesai }: Props) {
         </>
       )}
 
-      {galat && booking.status === S.DIBAYAR && (
+      {/* Saat DIKERJAKAN galatnya sudah tampil di kotak laporan di atas.
+          Di status lain — termasuk foto tiba yang ditolak — tadinya tidak
+          tampil sama sekali, dan perawat hanya melihat tidak terjadi apa-apa. */}
+      {galat && booking.status !== S.DIKERJAKAN && (
         <p className="text-xs text-nh-bahaya">{galat}</p>
       )}
     </div>
