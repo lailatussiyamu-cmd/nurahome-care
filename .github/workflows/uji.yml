@@ -55,12 +55,8 @@ jobs:
       - name: Periksa tipe
         run: npm run typecheck
 
-      # Sementara tidak menggagalkan CI: ada 6 galat react-hooks lama di
-      # AiAssistantDrawer, PanelKunjungan, dan PanelTinjauan. Hapus baris
-      # continue-on-error setelah galat itu dibereskan.
       - name: Lint
         run: npm run lint
-        continue-on-error: true
 
       - name: Pemeriksaan aktor & status
         run: npm run periksa

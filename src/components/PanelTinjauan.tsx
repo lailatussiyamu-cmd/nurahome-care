@@ -20,7 +20,7 @@
  *    tidak bisa ditinjau siapa pun — tidak oleh pasien, tidak oleh Anda.
  */
 
-import React, { useMemo, useState } from "react";
+import React, { useState } from "react";
 import { rp } from "@/logic/biaya";
 import {
   S,
@@ -65,19 +65,17 @@ export function PanelTinjauan({
   const [galat, setGalat] = useState<string | null>(null);
   const [mengirim, setMengirim] = useState(false);
 
-  // Penawaran bawaan dihitung sekali dari layanan + alamat. `useMemo` supaya
-  // isian perawat tidak tersapu bersih setiap kali komponen dirender ulang.
-  const awal = useMemo(
-    () =>
-      susunPenawaranAwal({
-        layanan: layanan ?? {},
-        tujuan: alamat ? { lat: alamat.latitude, lng: alamat.longitude } : null,
-        diLuarJamKerja: diLuarJamKerja(booking?.scheduledTimeSlot ?? ""),
-      }).map((i) => ({ ...i, originalUnitPriceIdr: i.unitPriceIdr })),
-    [layanan, alamat, booking?.scheduledTimeSlot]
+  // Penawaran bawaan dihitung SEKALI dari layanan + alamat, sebagai nilai
+  // awal state, supaya isian perawat tidak tersapu bersih setiap kali
+  // komponen dirender ulang. (Dulu lewat useMemo; hasilnya sama, karena
+  // useState hanya memakai nilai awal pada render pertama.)
+  const [item, setItem] = useState<ItemPenawaran[]>(() =>
+    susunPenawaranAwal({
+      layanan: layanan ?? {},
+      tujuan: alamat ? { lat: alamat.latitude, lng: alamat.longitude } : null,
+      diLuarJamKerja: diLuarJamKerja(booking?.scheduledTimeSlot ?? ""),
+    }).map((i) => ({ ...i, originalUnitPriceIdr: i.unitPriceIdr }))
   );
-
-  const [item, setItem] = useState<ItemPenawaran[]>(awal);
 
   const total = totalPenawaran(item);
   const honor = honorDariItem(item);
@@ -208,7 +206,6 @@ export function PanelTinjauan({
                     className="relative h-20 rounded-xl overflow-hidden border border-nh-garis hover:border-nh-ungu"
                     aria-label="Perbesar foto luka"
                   >
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
                     {fotoSudahDihapus(f) ? (
                       <span className="text-[9px] text-nh-kabut-2 px-1 text-center leading-tight">Dihapus setelah masa simpan</span>
                     ) : (
