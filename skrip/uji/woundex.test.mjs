@@ -129,6 +129,38 @@ describe("Woundex", () => {
     assert.equal(isi.woundex.derajatIwgdf, 1);
   });
 
+  test("nanah saja tidak boleh HIJAU, walau belum memenuhi definisi infeksi IWGDF", async () => {
+    const { id, perawat } = await perawatSudahTiba();
+    const isi = diterima(
+      await perawat.aksi({ action: "SIMPAN_WOUNDEX", bookingId: id, sinyal: { ...TENANG, nanah: true } }),
+      "menyimpan luka bernanah"
+    );
+    assert.equal(isi.woundex.tingkat, "KUNING");
+    assert.equal(isi.woundex.derajatIwgdf, 1, "1 dari 5 tanda: derajat IWGDF tetap 1");
+    assert.ok(isi.hasil.tindakan.langkah.some((l) => /nanah/.test(l)), "langkahnya menyebut nanah");
+  });
+
+  test("hipoglikemia: gula 50 mg/dL langsung MERAH dengan langkah penanganan", async () => {
+    const { id, perawat } = await perawatSudahTiba();
+    const isi = diterima(
+      await perawat.aksi({ action: "SIMPAN_WOUNDEX", bookingId: id, sinyal: { ...TENANG, gulaDarah: "50" } }),
+      "menyimpan pengkajian hipoglikemia"
+    );
+    assert.equal(isi.woundex.tingkat, "MERAH");
+    assert.ok(isi.hasil.alasan.some((a) => /hipoglikemia level 2/.test(a.teks)), "50 < 54: level 2");
+    assert.ok(isi.hasil.tindakan.langkah.some((l) => /15 g gula/.test(l)), "langkah 15 g gula ada");
+    assert.ok(!isi.hasil.tindakan.langkah.some((l) => /tim kaki/.test(l)), "luka tenang tidak dikirim ke tim kaki");
+  });
+
+  test("gula 70 mg/dL bukan hipoglikemia", async () => {
+    const { id, perawat } = await perawatSudahTiba();
+    const isi = diterima(
+      await perawat.aksi({ action: "SIMPAN_WOUNDEX", bookingId: id, sinyal: { ...TENANG, gulaDarah: "70" } }),
+      "menyimpan gula 70"
+    );
+    assert.equal(isi.woundex.tingkat, "HIJAU");
+  });
+
   test("pasien tidak menerima baris Woundex, perawatnya menerima", async () => {
     const { id, pasien, perawat } = await perawatSudahTiba();
     diterima(await perawat.aksi({ action: "SIMPAN_WOUNDEX", bookingId: id, sinyal: TENANG }), "menyimpan pengkajian");
