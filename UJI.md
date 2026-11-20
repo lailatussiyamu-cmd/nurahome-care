@@ -5,8 +5,16 @@ npm run uji
 ```
 
 Satu perintah: basis data uji dibuat ulang dari kosong, migrasi dijalankan,
-server dinyalakan, penyedia pembayaran tiruan dinyalakan, 68 tes dijalankan,
-semuanya dibereskan. Sekitar 35 detik.
+server dinyalakan, penyedia pembayaran dan model tiruan dinyalakan, 149 tes
+dijalankan, semuanya dibereskan. Sekitar satu menit.
+
+Butuh PostgreSQL (`psql` di PATH) dan Linux, macOS, atau WSL. Skripnya
+memakai `setsid` dan `/proc`, jadi tidak jalan di Git Bash Windows biasa.
+
+**Di GitHub, tes ini berjalan sendiri** di setiap push ke `main` dan setiap
+pull request (`.github/workflows/uji.yml`): typecheck, lint, pemeriksaan aktor
+& status, lalu skrip yang sama dengan PostgreSQL 16 sekali pakai. Tidak ada
+secret yang dipakai; semua kunci di skrip uji kunci palsu.
 
 ---
 
@@ -92,7 +100,7 @@ Setelah dipulihkan: 61 lulus, 0 gagal.
 
 ---
 
-## Dua galat yang ditemukan justru saat menyiapkan tesnya
+## Galat yang ditemukan justru saat menyiapkan tesnya
 
 **1. Server dev yang tertinggal membuat setengah tes merah tanpa ada yang
 rusak.** Next 16 menolak dua server dev di folder yang sama, tapi
@@ -108,6 +116,15 @@ kepemilikan berjalan sebelum penjagaan urutan. Dua-duanya menolak; mana
 yang lebih dulu adalah urusan dalam kode. Tesnya diperbaiki untuk menegaskan
 **keadaannya** (statusnya tidak bergeser), bukan kode statusnya — kalau
 dikunci, merapikan kode nanti akan memerahkan tes tanpa ada yang rusak.
+
+**3. Tes yang menghitung data milik semua orang berkedip.** `node --test`
+menjalankan berkas tes secara paralel. Tes "kabar yang sama tiga kali hanya
+berakibat sekali" dulu menghitung *semua* pemberitahuan admin, padahal berkas
+lain (Woundex MERAH, misalnya) ikut menambahnya di saat yang sama. Hasilnya
+hijau di satu putaran CI dan merah (261 ≠ 262) di putaran berikutnya untuk
+kode yang sama. Sekarang tes itu hanya menghitung pemberitahuan yang menyebut
+kode pesanannya sendiri. Aturan umumnya: tes hanya boleh menghitung data
+yang ia buat sendiri.
 
 ---
 
