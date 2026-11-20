@@ -15,7 +15,7 @@
  * kepercayaan itu bukan urusan pemasaran.
  */
 
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import { rp } from "@/logic/biaya";
 import { X, MessageCircleQuestion, Send, ShieldAlert, Phone } from "lucide-react";
 
@@ -85,7 +85,8 @@ export function AiAssistantDrawer({
   const [ketikan, setKetikan] = useState("");
   const [sibuk, setSibuk] = useState(false);
   const [riwayat, setRiwayat] = useState<Pesan[]>([PEMBUKA_TANPA_MODEL]);
-  const [sudahTanyaKeadaan, setSudahTanyaKeadaan] = useState(false);
+  /** Ref, bukan state: menandainya tidak perlu menggambar ulang laci. */
+  const sudahTanyaKeadaan = useRef(false);
 
   /**
    * Keadaan sambungannya ditanyakan sekali saat laci dibuka, dan HANYA
@@ -94,8 +95,8 @@ export function AiAssistantDrawer({
    * berjalan.
    */
   React.useEffect(() => {
-    if (!isOpen || sudahTanyaKeadaan) return;
-    setSudahTanyaKeadaan(true);
+    if (!isOpen || sudahTanyaKeadaan.current) return;
+    sudahTanyaKeadaan.current = true;
     fetch("/api/ai/assistant")
       .then((r) => r.json())
       .then((d) => {
@@ -103,7 +104,7 @@ export function AiAssistantDrawer({
           setRiwayat((r) => (r.length === 1 ? [PEMBUKA_DENGAN_MODEL] : r));
       })
       .catch(() => {});
-  }, [isOpen, sudahTanyaKeadaan]);
+  }, [isOpen]);
 
   if (!isOpen) return null;
 

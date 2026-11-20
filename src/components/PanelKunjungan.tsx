@@ -110,7 +110,13 @@ export function PanelKunjungan({ booking, foto, sesi, onSelesai }: Props) {
 
   if (!booking) return null;
 
-  const KotakFoto = ({ jenis, wajib }: { jenis: JenisFoto; wajib: boolean }) => {
+  /**
+   * Fungsi biasa, bukan komponen. Sebagai komponen yang dibuat di dalam
+   * render, React menganggapnya komponen BARU setiap kali panel digambar
+   * ulang, lalu membongkar dan memasang ulang keempat kotak foto beserta
+   * input berkasnya.
+   */
+  const kotakFoto = (jenis: JenisFoto, wajib: boolean) => {
     const ada = punya(jenis);
     const gambar = foto.find((f: any) => f.photoType === jenis);
     return (
@@ -125,7 +131,6 @@ export function PanelKunjungan({ booking, foto, sesi, onSelesai }: Props) {
       >
         {ada && gambar ? (
           <>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
             {!fotoSudahDihapus(gambar) && (
               /* eslint-disable-next-line @next/next/no-img-element */
               <img src={gambar.imageUrl} alt={LABEL_FOTO[jenis]} className="absolute inset-0 w-full h-full object-cover opacity-45" />
@@ -202,10 +207,10 @@ export function PanelKunjungan({ booking, foto, sesi, onSelesai }: Props) {
               Foto bukti
             </div>
             <div className="grid grid-cols-4 gap-2">
-              <KotakFoto jenis="ARRIVAL_CONFIRMATION" wajib={false} />
-              <KotakFoto jenis="SUPPLY_VERIFICATION" wajib={false} />
-              <KotakFoto jenis="WOUND_BEFORE" wajib={perluFotoLuka} />
-              <KotakFoto jenis="WOUND_AFTER" wajib={perluFotoLuka} />
+              {kotakFoto("ARRIVAL_CONFIRMATION", false)}
+              {kotakFoto("SUPPLY_VERIFICATION", false)}
+              {kotakFoto("WOUND_BEFORE", perluFotoLuka)}
+              {kotakFoto("WOUND_AFTER", perluFotoLuka)}
             </div>
           </div>
 
