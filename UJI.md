@@ -5,8 +5,13 @@ npm run uji
 ```
 
 Satu perintah: basis data uji dibuat ulang dari kosong, migrasi dijalankan,
-server dinyalakan, penyedia pembayaran dan model tiruan dinyalakan, 161 tes
+server dinyalakan, penyedia pembayaran dan model tiruan dinyalakan, 166 tes
 dijalankan, semuanya dibereskan. Sekitar satu menit.
+
+Tesnya berjalan dalam dua tahap. Hampir semuanya berbarengan; dua tes di
+`skrip/uji/berurutan/` dijalankan sesudahnya, sendirian, karena mengubah
+status verifikasi perawat yang dipakai bersama tes lain (lihat galat
+nomor 3 di bawah — jenis masalah yang sama).
 
 Butuh PostgreSQL (`psql` di PATH) dan Linux, macOS, atau WSL. Skripnya
 memakai `setsid` dan `/proc`, jadi tidak jalan di Git Bash Windows biasa.
@@ -61,7 +66,8 @@ ke aplikasi ini, dan sebagian besar dulu **berhasil**:
 | `pembayaran.test.mjs` | tanda tangan webhook, nominal, kabar ganda & tertinggal, browser tidak bisa melunaskan |
 | `alur.test.mjs` | urutan status tidak bisa dilangkahi, verifikasi izin praktik, penyortiran kritik |
 | `gambar.test.mjs` | batas ukuran foto, jenis berkas, dan `Cache-Control: no-store` |
-| `celah.test.mjs` | celah audit 20 Nov 2026: uang masuk setelah batal atau dua kali, batal setelah lunas, perawat yang izinnya dicabut, tiba tanpa foto, foto bukti di luar waktunya, tanda bahaya dari isi pengkajian, rebutan dua perawat, tombol bantuan perawat |
+| `celah.test.mjs` | celah audit 20 Nov 2026: uang masuk setelah batal atau dua kali, batal setelah lunas, tiba tanpa foto, foto bukti di luar waktunya, tanda bahaya dari isi pengkajian, rebutan dua perawat, tombol bantuan perawat; kode kunjungan (hanya pasien yang melihat, salah 5× terkunci, tebakan serentak tetap berhenti di 5) |
+| `berurutan/perawat-bersama.test.mjs` | perawat yang izinnya dicabut tidak bisa berangkat; foto wajah perawat hanya tampil setelah dicocokkan admin dengan KTP dan hanya untuk pasien yang dikunjunginya |
 
 Penyedia pembayaran tiruan (`midtrans-tiruan.mjs`) menjawab seperti Snap
 API di localhost, dengan kunci uji. Jalur `buatTransaksi()` yang sungguhan

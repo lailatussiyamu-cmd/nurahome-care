@@ -126,6 +126,13 @@ function Baris({
   const [alasan, setAlasan] = useState("");
   const [sibuk, setSibuk] = useState(false);
   const [galat, setGalat] = useState<string | null>(null);
+  const [fotoCocok, setFotoCocok] = useState(false);
+
+  /** Foto wajah terbaru — yang akan dilihat pasien bila diluluskan. */
+  const fotoWajah = berkas
+    .filter((b) => b.jenis === "FOTO" && !b.supersededAt)
+    .sort((a, b) => new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime())[0];
+  const perluCocokFoto = keputusan === "TERVERIFIKASI" && !!fotoWajah && !fotoCocok;
 
   const status = (p.verifiedStatus ?? "BELUM_DIAJUKAN") as StatusVerifikasi;
   const sisa = sisaHariSIP(p.sipBerlakuSampai);
@@ -147,6 +154,7 @@ function Baris({
           keputusan,
           alasan,
           diperiksaDi,
+          fotoCocok,
         }),
       });
       const jawab = await res.json().catch(() => ({}));
@@ -302,6 +310,32 @@ function Baris({
                 aplikasi, dan menebak isi halaman web akan menghasilkan lencana yang
                 salah persis seperti sebelumnya.
               </p>
+
+              {/* Foto wajah — inilah yang akan dilihat pasien di depan pintu.
+                  Ditampilkan langsung (bukan tautan seperti KTP), karena
+                  memang harus dibandingkan berdampingan dengan foto KTP. */}
+              {fotoWajah && (
+                <div className="flex items-start gap-3 rounded-xl border border-nh-garis p-3">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={fotoWajah.fileUrl}
+                    alt={`Foto wajah ${p.fullName}`}
+                    className="w-20 h-20 shrink-0 rounded-lg object-cover"
+                  />
+                  <label className="flex items-start gap-2 text-xs text-nh-putih leading-relaxed cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={fotoCocok}
+                      onChange={(e) => setFotoCocok(e.target.checked)}
+                      className="mt-0.5"
+                    />
+                    <span>
+                      Wajah di foto ini sama dengan wajah di KTP. Foto ini akan
+                      ditunjukkan kepada pasien yang dikunjunginya.
+                    </span>
+                  </label>
+                </div>
+              )}
             </div>
           ) : (
             <div className="space-y-1.5">
@@ -331,7 +365,7 @@ function Baris({
           <div className="flex gap-2">
             <button
               onClick={kirim}
-              disabled={sibuk || !!tolak}
+              disabled={sibuk || !!tolak || perluCocokFoto}
               className="nh-tombol px-4 py-2.5 text-xs flex items-center gap-2 disabled:opacity-40"
             >
               {sibuk ? (

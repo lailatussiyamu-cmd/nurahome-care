@@ -43,6 +43,13 @@
       "when": 1794879078319,
       "tag": "0005_woundex",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1795176196240,
+      "tag": "0006_kode_kunjungan",
+      "breakpoints": true
     }
   ]
 }

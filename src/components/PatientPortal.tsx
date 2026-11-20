@@ -8,6 +8,9 @@ import { PanelPembayaran } from "./PanelPembayaran";
 import { PanelHasilKunjungan } from "./PanelHasilKunjungan";
 import { PanelTestimoni } from "./PanelTestimoni";
 import { ringkasNilai, bintangTeks } from "@/logic/testimoni";
+
+/** Status yang berarti perawatnya pasti datang — sama dengan penjaga di /api/foto-perawat. */
+const KUNJUNGAN_PASTI: string[] = [S.DIBAYAR, S.PERAWAT_BERANGKAT, S.PERAWAT_TIBA, S.DIKERJAKAN, S.SELESAI];
 import { rp } from "@/logic/biaya";
 import {
   ShieldCheck,
@@ -309,20 +312,60 @@ export function PatientPortal({
                     begitu juga "perkiraan tiba 14 menit ke Sawojajar" yang
                     muncul apa pun status dan alamatnya. */}
                 {activeBooking.providerName ? (
-                  <div className="p-3.5 rounded-xl bg-nh-panel-2 border border-nh-garis flex items-center gap-3">
-                    <div className="w-11 h-11 shrink-0 rounded-xl bg-nh-ungu-tekan text-white font-bold flex items-center justify-center">
-                      {inisial(activeBooking.providerName)}
-                    </div>
-                    <div className="min-w-0">
-                      <div className="font-bold text-xs text-nh-putih">
-                        {activeBooking.providerName}
+                  <div className="p-3.5 rounded-xl bg-nh-panel-2 border border-nh-garis space-y-3">
+                    <div className="flex items-center gap-3">
+                      {/* Foto wajah hanya setelah kunjungannya pasti (sudah
+                          dibayar), dan hanya yang sudah dicocokkan admin
+                          dengan KTP — server yang menjaga keduanya. */}
+                      {perawatKunjungan?.adaFoto && KUNJUNGAN_PASTI.includes(activeBooking.status) ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={`/api/foto-perawat?id=${activeBooking.providerId}`}
+                          alt={`Foto ${activeBooking.providerName}`}
+                          className="w-16 h-16 shrink-0 rounded-xl object-cover border border-nh-garis"
+                        />
+                      ) : (
+                        <div className="w-11 h-11 shrink-0 rounded-xl bg-nh-ungu-tekan text-white font-bold flex items-center justify-center">
+                          {inisial(activeBooking.providerName)}
+                        </div>
+                      )}
+                      <div className="min-w-0">
+                        <div className="font-bold text-xs text-nh-putih">
+                          {activeBooking.providerName}
+                        </div>
+                        <div className="text-[11px] text-nh-kabut">
+                          {perawatKunjungan?.licenseNumber
+                            ? `STR ${perawatKunjungan.licenseNumber}`
+                            : "Perawat ber-STR"}
+                        </div>
+                        {KUNJUNGAN_PASTI.includes(activeBooking.status) && !perawatKunjungan?.adaFoto && (
+                          <div className="text-[11px] text-nh-kabut-2 mt-0.5">
+                            Foto perawat belum tersedia — cocokkan nama dan STR-nya.
+                          </div>
+                        )}
                       </div>
-                      <div className="text-[11px] text-nh-kabut">
-                        {perawatKunjungan?.licenseNumber
-                          ? `STR ${perawatKunjungan.licenseNumber}`
-                          : "Perawat ber-STR"}
-                      </div>
                     </div>
+
+                    {/* Kode di depan pintu. Hanya layar pasien yang
+                        menerimanya; perawat harus mendengarnya dari pasien. */}
+                    {activeBooking.kodeKunjungan &&
+                      [S.DIBAYAR, S.PERAWAT_BERANGKAT].includes(activeBooking.status) && (
+                        <div className="rounded-xl border border-nh-ungu/40 bg-nh-ungu/10 p-3 space-y-1.5">
+                          <div className="text-[11px] font-bold uppercase tracking-wider text-nh-ungu-muda">
+                            Kode kunjungan
+                          </div>
+                          <div className="font-mono text-3xl font-bold tracking-[0.3em] text-nh-putih">
+                            {activeBooking.kodeKunjungan}
+                          </div>
+                          <p className="text-[11px] text-nh-kabut leading-relaxed">
+                            Sebutkan kode ini <b className="text-nh-putih">hanya</b> kepada perawat
+                            yang wajah dan namanya sama dengan di atas. Perawat yang benar
+                            tidak bisa melihat kode ini di aplikasinya — ia harus
+                            mendengarnya dari Anda. Kalau ragu, jangan buka pintu dan
+                            hubungi kami.
+                          </p>
+                        </div>
+                      )}
                   </div>
                 ) : (
                   <div className="p-3.5 rounded-xl bg-nh-panel-2 border border-dashed border-nh-garis text-xs text-nh-kabut leading-relaxed">

@@ -11,7 +11,7 @@
  *      tahu: admin tidak tahu harus mengembalikan uang, perawat tidak tahu
  *      kunjungannya batal.
  *   3. Perawat yang izinnya dicabut tetap bisa mengerjakan kunjungan yang
- *      sudah ia pegang — penjagaan verifikasi hanya ada saat mengambil.
+ *      sudah ia pegang (tesnya di berurutan/perawat-bersama.test.mjs).
  *   4. "Sudah tiba" bisa ditandai tanpa foto, dan foto bukti bisa
  *      ditambahkan sebelum berangkat atau setelah kunjungan ditutup.
  *   5. Tanda bahaya hanya dipercaya dari browser.
@@ -29,6 +29,8 @@ import {
   kabar,
   kirimKabar,
   lihatPemesanan,
+  majukanKunjungan,
+  kodeDariPasien,
   masuk,
   siapkanPemesanan,
   tanggalNanti,
@@ -139,69 +141,6 @@ describe("Uang yang tidak boleh diterima diam-diam", () => {
 
 /* ------------------------------------------------------------------ */
 
-describe("Perawat yang izinnya dicabut", () => {
-  test("tidak bisa berangkat ke kunjungan yang sudah ia pegang", async () => {
-    const pasien = await masuk(AKUN.pasien);
-    const hendra = await masuk(AKUN.perawat2);
-    const admin = await masuk(AKUN.admin);
-
-    const buat = diterima(
-      await pasien.aksi({
-        action: "CREATE_BOOKING",
-        serviceId: 1,
-        serviceName: "Perawatan luka",
-        serviceCategory: "WOUND_CARE",
-        addressText: "Jl. Bunga Coklat No. 18, Lowokwaru, Kota Malang",
-        scheduledDate: tanggalNanti(12),
-        scheduledTimeSlot: "09:00 - 10:00",
-        woundAssessment: { woundLocation: "Betis kanan" },
-      }),
-      "membuat permintaan"
-    );
-    const id = buat.booking.id;
-    diterima(await hendra.aksi({ action: "MULAI_TINJAUAN", bookingId: id }), "Hendra mengambil");
-    diterima(
-      await hendra.aksi({
-        action: "KIRIM_PENAWARAN",
-        bookingId: id,
-        temuan: "Luka bersih, perlu ganti balut.",
-        item: [{ kind: "JASA", label: "Jasa ganti balut", qty: 1, unitPriceIdr: 460000, fromCatalog: true }],
-        scheduledDate: tanggalNanti(12),
-        scheduledTimeSlot: "09:00 - 10:00",
-      }),
-      "Hendra menawar"
-    );
-    diterima(
-      await pasien.aksi({ action: "PUTUSKAN_PENAWARAN", bookingId: id, setuju: true, namaTandaTangan: "Budi Santoso", hubungan: "Diri sendiri" }),
-      "pasien setuju"
-    );
-    diterima(await pasien.kirim("/api/pembayaran", { bookingId: id }), "membuka pembayaran");
-    diterima(await kirimKabar(kabar(`${buat.booking.bookingCode}-1`)), "lunas");
-
-    const r = await admin.ambil("/api/platform");
-    const idHendra = (r.isi.providers ?? []).find((p) => /Hendra/.test(p.fullName))?.id;
-    assert.ok(idHendra, "data Hendra ditemukan");
-
-    // Izinnya dicabut sementara (bukan dibekukan, supaya sesinya — yang
-    // dipakai tes lain secara bersamaan — tidak ikut dicabut).
-    diterima(
-      await admin.aksi({ action: "PUTUS_VERIFIKASI", providerId: idHendra, keputusan: "PERLU_PERBAIKAN", alasan: "SIP perlu diunggah ulang, berkasnya buram." }),
-      "admin mencabut sementara"
-    );
-    try {
-      const berangkat = await hendra.aksi({ action: "UPDATE_BOOKING_STATUS", bookingId: id, status: "PERAWAT_BERANGKAT" });
-      ditolak(berangkat, 403, "perawat yang izinnya tidak berlaku berangkat ke rumah pasien");
-      const b = await lihatPemesanan(pasien, id);
-      assert.equal(b.status, "DIBAYAR", "status tidak boleh bergeser");
-    } finally {
-      diterima(
-        await admin.aksi({ action: "PUTUS_VERIFIKASI", providerId: idHendra, keputusan: "TERVERIFIKASI", diperiksaDi: "Portal KTKI (uji)" }),
-        "memulihkan Hendra"
-      );
-    }
-  });
-});
-
 /* ------------------------------------------------------------------ */
 
 describe("Bukti kunjungan", () => {
@@ -221,9 +160,7 @@ describe("Bukti kunjungan", () => {
 
   test("foto bukti tidak bisa ditambahkan setelah kunjungan ditutup", async () => {
     const { id, perawat } = await lunas();
-    diterima(await perawat.aksi({ action: "UPDATE_BOOKING_STATUS", bookingId: id, status: "PERAWAT_BERANGKAT" }), "berangkat");
-    diterima(await perawat.aksi({ action: "UPLOAD_TASK_PHOTO", bookingId: id, photoType: "ARRIVAL_CONFIRMATION", imageUrl: FOTO }), "tiba");
-    diterima(await perawat.aksi({ action: "UPDATE_BOOKING_STATUS", bookingId: id, status: "DIKERJAKAN" }), "mulai");
+    await majukanKunjungan(perawat, id);
     diterima(await perawat.aksi({ action: "UPLOAD_TASK_PHOTO", bookingId: id, photoType: "WOUND_BEFORE", imageUrl: FOTO }), "foto sebelum");
     diterima(await perawat.aksi({ action: "UPLOAD_TASK_PHOTO", bookingId: id, photoType: "WOUND_AFTER", imageUrl: FOTO }), "foto sesudah");
     diterima(
@@ -236,8 +173,7 @@ describe("Bukti kunjungan", () => {
 
   test("jenis foto yang tidak dikenal ditolak", async () => {
     const { id, perawat } = await lunas();
-    diterima(await perawat.aksi({ action: "UPDATE_BOOKING_STATUS", bookingId: id, status: "PERAWAT_BERANGKAT" }), "berangkat");
-    diterima(await perawat.aksi({ action: "UPLOAD_TASK_PHOTO", bookingId: id, photoType: "ARRIVAL_CONFIRMATION", imageUrl: FOTO }), "tiba");
+    await majukanKunjungan(perawat, id, "PERAWAT_TIBA");
     const r = await perawat.aksi({ action: "UPLOAD_TASK_PHOTO", bookingId: id, photoType: "APA_SAJA", imageUrl: FOTO });
     ditolak(r, 400, "jenis foto karangan");
   });
@@ -308,6 +244,77 @@ describe("Perawat meminta bantuan", () => {
 
     const untukPasien = await kabarUntukku(pasien, kode);
     assert.ok(!untukPasien.some((x) => /bantuan/i.test(x.title)), "pasien tidak diberi tahu perawat meminta bantuan");
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* Di depan pintu: foto perawat dan kode kunjungan                     */
+/* ------------------------------------------------------------------ */
+
+describe("Di depan pintu — kode kunjungan", () => {
+  test("hanya pasien yang melihat kode; perawat tidak", async () => {
+    const { id, pasien, perawat } = await lunas();
+    const diPasien = await lihatPemesanan(pasien, id);
+    assert.match(String(diPasien.kodeKunjungan), /^\d{4}$/, "pasien melihat kode 4 angka setelah membayar");
+    const diPerawat = await lihatPemesanan(perawat, id);
+    assert.equal(diPerawat.kodeKunjungan, undefined, "kode tidak boleh sampai ke layar perawat");
+  });
+
+  test("tiba tanpa kode atau dengan kode salah ditolak; kode yang benar diterima", async () => {
+    const { id, pasien, perawat } = await lunas();
+    await majukanKunjungan(perawat, id, "PERAWAT_BERANGKAT");
+    const benar = await kodeDariPasien(id);
+    const salah = benar === "0000" ? "1111" : "0000";
+    const foto = { action: "UPLOAD_TASK_PHOTO", bookingId: id, photoType: "ARRIVAL_CONFIRMATION", imageUrl: FOTO };
+
+    ditolak(await perawat.aksi(foto), 403, "tiba tanpa kode");
+    const r = await perawat.aksi({ ...foto, kodeKunjungan: salah });
+    ditolak(r, 403, "tiba dengan kode salah");
+    assert.match(r.isi.error, /Sisa 4/, "lupa mengisi tidak menghabiskan percobaan; salah pertama menyisakan 4");
+    assert.equal((await lihatPemesanan(pasien, id)).status, "PERAWAT_BERANGKAT");
+
+    diterima(await perawat.aksi({ ...foto, kodeKunjungan: benar }), "tiba dengan kode benar");
+    assert.equal((await lihatPemesanan(pasien, id)).status, "PERAWAT_TIBA");
+  });
+
+  test("lima kali salah mengunci — kode benar pun ditolak — sampai admin membukanya", async () => {
+    const { id, kode, perawat } = await lunas();
+    await majukanKunjungan(perawat, id, "PERAWAT_BERANGKAT");
+    const benar = await kodeDariPasien(id);
+    const salah = benar === "0000" ? "1111" : "0000";
+    const foto = { action: "UPLOAD_TASK_PHOTO", bookingId: id, photoType: "ARRIVAL_CONFIRMATION", imageUrl: FOTO };
+
+    for (let i = 0; i < 5; i++) ditolak(await perawat.aksi({ ...foto, kodeKunjungan: salah }), 403, `tebakan ke-${i + 1}`);
+    ditolak(await perawat.aksi({ ...foto, kodeKunjungan: benar }), 423, "kode benar setelah terkunci");
+
+    const admin = await masuk(AKUN.admin);
+    assert.ok(
+      (await kabarUntukku(admin, kode)).some((n) => /terkunci/i.test(n.title)),
+      "admin diberi tahu kodenya terkunci"
+    );
+    ditolak(await admin.aksi({ action: "BUKA_KUNCI_KODE", bookingId: id, alasan: "ok" }), 400, "membuka tanpa alasan");
+    ditolak(await perawat.aksi({ action: "BUKA_KUNCI_KODE", bookingId: id, alasan: "saya buka sendiri saja" }), 403, "perawat membuka kuncinya sendiri");
+    diterima(
+      await admin.aksi({ action: "BUKA_KUNCI_KODE", bookingId: id, alasan: "Pasien dan perawat sudah ditelepon, perawatnya benar." }),
+      "admin membuka kunci"
+    );
+    diterima(await perawat.aksi({ ...foto, kodeKunjungan: benar }), "tiba setelah kunci dibuka");
+  });
+
+  test("tebakan yang dikirim serentak tetap berhenti di lima", async () => {
+    const { id, perawat } = await lunas();
+    await majukanKunjungan(perawat, id, "PERAWAT_BERANGKAT");
+    const benar = await kodeDariPasien(id);
+    // Semua kemungkinan selain yang benar, sebagian, dikirim sekaligus.
+    const tebakan = Array.from({ length: 30 }, (_, i) => String(i).padStart(4, "0")).filter((k) => k !== benar);
+    const hasil = await Promise.all(
+      tebakan.map((k) =>
+        perawat.aksi({ action: "UPLOAD_TASK_PHOTO", bookingId: id, photoType: "ARRIVAL_CONFIRMATION", imageUrl: FOTO, kodeKunjungan: k })
+      )
+    );
+    const dicocokkan = hasil.filter((r) => r.status === 403).length;
+    assert.ok(dicocokkan <= 5, `paling banyak 5 tebakan yang sempat dicocokkan, dapat ${dicocokkan}`);
+    assert.ok(hasil.every((r) => r.status === 403 || r.status === 423), "tidak ada tebakan yang lolos");
   });
 });
 

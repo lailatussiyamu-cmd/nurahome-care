@@ -241,6 +241,19 @@ export const bookings = pgTable("bookings", {
    * berhenti dibaca, dan yang benar-benar penting ikut tenggelam bersamanya.
    */
   terakhirDidorong: timestamp("terakhir_didorong"),
+  /**
+   * Kode kunjungan 4 angka — bukti di depan pintu.
+   *
+   * Dibuat saat pembayaran masuk dan HANYA dikirim ke layar pasien (dan
+   * admin). Pasien menyebutkannya setelah mengenali wajah perawat dari foto
+   * di aplikasinya; perawat memasukkannya, dan baru setelah itu "sudah tiba"
+   * tercatat. Kode yang cocok membuktikan dua hal sekaligus: orang itu
+   * memegang akun perawat yang ditugaskan, dan ia benar-benar ada di depan
+   * pasien.
+   */
+  kodeKunjungan: text("kode_kunjungan"),
+  /** Berapa kali kode salah dimasukkan. Lima kali → terkunci sampai admin membukanya. */
+  kodeSalah: integer("kode_salah").notNull().default(0),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 

@@ -23,6 +23,7 @@ import {
   type StatusVerifikasi,
 } from "@/logic/verifikasi";
 import { tanggalIndo } from "@/logic/sesi";
+import { kecilkanGambar } from "@/logic/gambar";
 import {
   ShieldCheck,
   ShieldAlert,
@@ -62,8 +63,28 @@ export function PanelVerifikasiPerawat({ perawat, berkas, onSelesai }: Props) {
   const nada = NADA_VERIFIKASI[status] ?? "buruk";
   const sisa = sisaHariSIP(perawat.sipBerlakuSampai);
 
-  const bacaBerkas = (jenis: JenisBerkas, file: File | undefined) => {
+  const bacaBerkas = async (jenis: JenisBerkas, file: File | undefined) => {
     if (!file) return;
+    /**
+     * Foto wajah akan dilihat pasien di ponselnya: harus gambar, dan
+     * dikecilkan dulu (sisi terpanjang 800 px sudah jelas untuk mengenali
+     * wajah). Dokumen lain tetap apa adanya — admin perlu membaca tulisan
+     * kecil di STR dan SIP.
+     */
+    if (jenis === "FOTO") {
+      if (!file.type.startsWith("image/")) {
+        setGalat("Foto wajah harus berupa gambar (JPG atau PNG), bukan PDF.");
+        return;
+      }
+      try {
+        const hasil = await kecilkanGambar(file, { sisiMaks: 800 });
+        setUnggahan((u) => ({ ...u, FOTO: hasil.dataUrl }));
+        setGalat(null);
+      } catch (e) {
+        setGalat(e instanceof Error ? e.message : "Foto tidak bisa diolah. Coba foto lain.");
+      }
+      return;
+    }
     if (file.size > 5 * 1024 * 1024) {
       setGalat("Berkas maksimal 5 MB. Foto dokumennya saja sudah cukup.");
       return;
@@ -288,7 +309,7 @@ export function PanelVerifikasiPerawat({ perawat, berkas, onSelesai }: Props) {
                   </div>
                   <input
                     type="file"
-                    accept="image/*,application/pdf"
+                    accept={b.jenis === "FOTO" ? "image/*" : "image/*,application/pdf"}
                     className="sr-only"
                     onChange={(e) => bacaBerkas(b.jenis, e.target.files?.[0])}
                   />

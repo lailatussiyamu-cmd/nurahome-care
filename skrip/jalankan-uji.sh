@@ -165,6 +165,14 @@ echo
 set +e
 node --test --test-reporter=spec "skrip/uji/*.test.mjs"
 HASIL=$?
+# Tes yang mengubah status perawat yang dipakai bersama dijalankan SETELAH
+# yang lain, tidak berbarengan — kalau berbarengan, tes lain melihat perawat
+# itu "belum lolos" di tengah jalan dan gagal tanpa ada yang rusak.
+echo
+echo "▸ Menjalankan tes berurutan…"
+node --test --test-reporter=spec "skrip/uji/berurutan/*.test.mjs"
+HASIL2=$?
+[ "$HASIL" = "0" ] && HASIL=$HASIL2
 set -e
 
 echo

@@ -416,9 +416,26 @@ atau layanan pemanggil terjadwal dari luar. Pesan WhatsApp ke admin baru
 benar-benar terkirim setelah penyedia WhatsApp dipasang; sampai itu ia
 tercatat di kotak keluar.
 
-**Masih terbuka (bukan celah kode, tapi keputusan):**
-- Pasien belum punya cara memastikan orang di depan pintu adalah perawat yang
-  ditugaskan (mis. kode kunjungan yang dicocokkan, foto perawat di layar).
+**Di depan pintu — DIKERJAKAN 20 November 2026:**
+- **Foto wajah perawat** wajib diunggah saat verifikasi dan baru tampil ke
+  pasien setelah admin menyatakan sudah mencocokkannya dengan KTP. Hanya
+  pasien yang kunjungannya dengan perawat itu sudah dibayar yang bisa
+  melihatnya (`/api/foto-perawat`), tidak ikut di data umum.
+- **Kode kunjungan 4 angka** dibuat saat pembayaran masuk dan hanya tampil
+  di layar pasien. Perawat baru bisa menandai tiba setelah memasukkan kode
+  yang dibacakan pasien. Salah 5 kali → terkunci, admin diberi tahu dan
+  membukanya setelah menelepon kedua pihak. Jatah percobaan diambil secara
+  atomik, jadi tebakan yang dikirim serentak tetap berhenti di lima.
+- Ikut diperbaiki: server menolak perpanjangan SIP karena hanya menghitung
+  berkas yang dikirim saat itu (KTP yang sudah ada dianggap belum ada); dan
+  perawat yang izinnya tidak berlaku masih melihat data pasien dari
+  kunjungan yang belum ia kerjakan.
+
+**Masih terbuka:**
+- GPS saat berangkat, tiba, dan minta bantuan (untuk admin), bersama titik
+  lokasi rumah pasien yang ditandai di peta saat memesan.
+- Perawat lama yang sudah terverifikasi sebelum ini belum punya foto wajah;
+  pasien melihat "foto belum tersedia" sampai mereka mengajukan ulang.
 - Pengembalian dana masih manual lewat dasbor Midtrans; aplikasi kini
   memberi tahu kapan harus, tapi belum mencatat bahwa sudah dilakukan.
 
