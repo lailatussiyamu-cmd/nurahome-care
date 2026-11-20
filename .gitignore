@@ -38,3 +38,5 @@ uploads/
 Thumbs.db
 .vscode/
 .idea/
+# Pengaturan pratinjau aplikasi Claude di komputer masing-masing
+.claude/
